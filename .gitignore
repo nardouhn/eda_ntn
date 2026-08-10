@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+.upload_tmp/
+.pnpm-store/
+data/
+frontend/node_modules/
+frontend/.next/
+frontend/*.tsbuildinfo
+backend/.venv/
+backend/__pycache__/
+.pytest_cache/
+pytest-cache-files-*/
+*.pyc

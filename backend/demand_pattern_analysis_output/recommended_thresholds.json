@@ -1,0 +1,124 @@
+{
+  "level": [
+    "base_sku",
+    "branch"
+  ],
+  "source_table": "source.mart_sku_branch_month",
+  "source_schema_columns": [
+    "bravo_sku",
+    "base_sku",
+    "sku_status",
+    "price_group",
+    "factory_sku",
+    "branch",
+    "branch_name",
+    "region",
+    "branch_status",
+    "month",
+    "unit",
+    "quantity",
+    "total_amount",
+    "line_count",
+    "sku_name",
+    "pattern_set"
+  ],
+  "source_columns_used": [
+    "region",
+    "base_sku",
+    "branch",
+    "month",
+    "quantity",
+    "sku_status",
+    "branch_status"
+  ],
+  "active_status_definition": "(LOWER(BTRIM(COALESCE(sku_status, ''))) IN ('hoạt động') AND LOWER(BTRIM(COALESCE(branch_status, ''))) IN ('hoạt động'))",
+  "demand_definition": "monthly_net = SUM(quantity) at base_sku + branch + month; active base uses active-variant monthly_net, inactive base uses all-variant monthly_net; demand = GREATEST(monthly_net, 0) only after monthly netting",
+  "series_policy": {
+    "active": "first positive month through source data-as-of month",
+    "recent_inactive": "latest activity window ending at last positive net-demand month",
+    "permanently_inactive": "excluded when recency exceeds inactive_recent_months",
+    "relaunch": "split after relaunch_gap_months consecutive zero-demand months",
+    "weight": "(min(history_months, history_weight_cap_months) / min_history_months) ** history_weight_power"
+  },
+  "formula": {
+    "adi": "history_months / positive_months",
+    "cv2": "(STDDEV_SAMP(positive_month_demand) / AVG(positive_month_demand))^2"
+  },
+  "config": {
+    "min_history_months": 12,
+    "min_positive_months": 3,
+    "inactive_recent_months": 12,
+    "relaunch_gap_months": 6,
+    "history_weight_power": 0.5,
+    "history_weight_cap_months": 36,
+    "min_pattern_share": 0.05,
+    "bootstrap_iterations": 200,
+    "random_seed": 42,
+    "full_grid_size": 33,
+    "bootstrap_grid_size": 21
+  },
+  "row_counts": {
+    "source_base_sku_branch": 28390,
+    "retained_base_sku_branch": 20956,
+    "excluded_base_sku_branch": 7434,
+    "total_episodes": 25259,
+    "eligible_episodes": 10551,
+    "insufficient_or_out_of_scope_episodes": 14708,
+    "bootstrap_successful": 200
+  },
+  "recommended": {
+    "adi_threshold": 2.3333333333333335,
+    "cv2_threshold": 1.0079624556754672,
+    "evaluation": {
+      "adi_threshold": 2.3333333333333335,
+      "cv2_threshold": 1.0079624556754672,
+      "score": 0.7123658377949516,
+      "separation": 0.6689601231101174,
+      "entropy": 0.9583315543423447,
+      "min_share": 0.12847354498983668,
+      "min_weighted_share": 0.12847354498983668,
+      "min_count_share": 0.1257700691877547,
+      "smooth_share": 0.3609886949886343,
+      "erratic_share": 0.252777538108853,
+      "intermittent_share": 0.25776022191267456,
+      "lumpy_share": 0.12847354498983668,
+      "smooth_count_share": 0.37029665434555964,
+      "erratic_count_share": 0.2517296938678798,
+      "intermittent_count_share": 0.2522035825988058,
+      "lumpy_count_share": 0.1257700691877547
+    }
+  },
+  "best_full_sample": {
+    "adi_threshold": 2.4545454545454546,
+    "cv2_threshold": 0.9797744030734977,
+    "score": 0.7121764114724842,
+    "separation": 0.6701410275399804,
+    "entropy": 0.9503769204233391,
+    "min_share": 0.12088684957022443,
+    "min_weighted_share": 0.12088684957022443,
+    "min_count_share": 0.1172400720310871,
+    "smooth_share": 0.36999906537255756,
+    "erratic_share": 0.27914339606650207,
+    "intermittent_share": 0.22997068899071474,
+    "lumpy_share": 0.12088684957022443,
+    "smooth_count_share": 0.38015353994882,
+    "erratic_count_share": 0.27893090702303097,
+    "intermittent_count_share": 0.2236754809970619,
+    "lumpy_count_share": 0.1172400720310871
+  },
+  "bootstrap_interval_10_90": {
+    "adi_threshold": [
+      2.3333333333333335,
+      2.5
+    ],
+    "cv2_threshold": [
+      0.9974641445926847,
+      1.0182898373194011
+    ]
+  },
+  "warnings": {
+    "pattern_too_small": false,
+    "adi_threshold_unstable": false,
+    "cv2_threshold_unstable": false
+  }
+}
