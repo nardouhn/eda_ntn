@@ -43,7 +43,7 @@ export function Dashboard() {
 
       {error ? <div className="error-banner">Không kết nối được API: {error}</div> : null}
       {tab === "items" ? <ItemsModule branches={branches} branchCode={branchCode} onBranchChange={setBranchCode} /> : null}
-      {tab === "eda" ? <EdaModule branches={branches} branchCode={branchCode} onBranchChange={setBranchCode} /> : null}
+      {tab === "eda" ? <EdaModule /> : null}
       {tab === "forecast" ? <ForecastModule branches={branches} branchCode={branchCode} onBranchChange={setBranchCode} /> : null}
     </main>
   );

@@ -7,77 +7,200 @@ from app.db import get_pool
 
 router = APIRouter(prefix="/eda", tags=["eda"])
 
+SOURCE_TABLE = "source.mart_sku_branch_month"
+REGION_SQL = "COALESCE(NULLIF(BTRIM(region), ''), 'Chưa xác định')"
+
+
+def _overview_scope(
+    branch_code: str | None,
+    region: str | None,
+    sku_status: str | None,
+    branch_status: str | None,
+    search: str | None,
+) -> tuple[str, list[str]]:
+    clauses = ["base_sku IS NOT NULL", "branch IS NOT NULL", "month IS NOT NULL"]
+    params: list[str] = []
+    if branch_code:
+        clauses.append("BTRIM(branch) = %s")
+        params.append(branch_code.strip())
+    if region:
+        clauses.append(f"{REGION_SQL} = %s")
+        params.append(region.strip())
+    if sku_status:
+        clauses.append("LOWER(BTRIM(COALESCE(sku_status, ''))) = LOWER(BTRIM(%s))")
+        params.append(sku_status)
+    if branch_status:
+        clauses.append("LOWER(BTRIM(COALESCE(branch_status, ''))) = LOWER(BTRIM(%s))")
+        params.append(branch_status)
+    if search:
+        clauses.append("(branch ILIKE %s OR COALESCE(branch_name, '') ILIKE %s)")
+        term = f"%{search.strip()}%"
+        params.extend([term, term])
+    return " AND ".join(clauses), params
+
+
+@router.get("/filters")
+async def filters() -> dict:
+    """Return the filter shape consumed by the EDA overview page."""
+    async with get_pool().connection() as conn:
+        branch_rows = await (
+            await conn.execute(
+                f"""
+                SELECT BTRIM(branch) AS branch,
+                       COALESCE(MAX(NULLIF(BTRIM(branch_name), '')), BTRIM(branch)) AS branch_name,
+                       MAX({REGION_SQL}) AS region,
+                       COALESCE(MAX(NULLIF(BTRIM(branch_status), '')), 'Chưa xác định') AS branch_status
+                FROM {SOURCE_TABLE}
+                WHERE NULLIF(BTRIM(branch), '') IS NOT NULL
+                GROUP BY BTRIM(branch)
+                ORDER BY BTRIM(branch)
+                """
+            )
+        ).fetchall()
+        region_rows = await (
+            await conn.execute(
+                f"SELECT DISTINCT {REGION_SQL} AS value FROM {SOURCE_TABLE} ORDER BY value"
+            )
+        ).fetchall()
+        sku_status_rows = await (
+            await conn.execute(
+                f"""
+                SELECT DISTINCT BTRIM(sku_status) AS value
+                FROM {SOURCE_TABLE}
+                WHERE NULLIF(BTRIM(sku_status), '') IS NOT NULL
+                ORDER BY value
+                """
+            )
+        ).fetchall()
+        branch_status_rows = await (
+            await conn.execute(
+                f"""
+                SELECT DISTINCT BTRIM(branch_status) AS value
+                FROM {SOURCE_TABLE}
+                WHERE NULLIF(BTRIM(branch_status), '') IS NOT NULL
+                ORDER BY value
+                """
+            )
+        ).fetchall()
+    return {
+        "branches": [dict(row) for row in branch_rows],
+        "regions": [row["value"] for row in region_rows],
+        "sku_statuses": [row["value"] for row in sku_status_rows],
+        "branch_statuses": [row["value"] for row in branch_status_rows],
+    }
+
 
 @router.get("/overview")
-async def overview(branch_code: str | None = None) -> dict:
-    branch_filter = "and m.branch_code = %s" if branch_code else ""
-    params = [branch_code] if branch_code else []
+async def overview(
+    branch_code: str | None = None,
+    region: str | None = None,
+    sku_status: str | None = None,
+    branch_status: str | None = None,
+    search: str | None = None,
+) -> dict:
+    where, params = _overview_scope(
+        branch_code, region, sku_status, branch_status, search
+    )
+    revenue_sql = "CASE WHEN quantity > 0 THEN GREATEST(total_amount, 0) ELSE 0 END"
     async with get_pool().connection() as conn:
         kpis = await (
             await conn.execute(
                 f"""
-                select
-                  count(distinct m.base_sku) base_skus,
-                  count(distinct m.branch_code) branches,
-                  sum(m.gross_positive_qty) gross_qty,
-                  sum(m.return_qty) return_qty,
-                  sum(m.net_qty) net_qty,
-                  max(m.month) data_as_of
-                from analytics.mart_item_branch_month m
-                where true {branch_filter}
+                SELECT COUNT(DISTINCT base_sku)::integer AS total_base_skus,
+                       COUNT(DISTINCT bravo_sku)::integer AS total_bravo_skus,
+                       COUNT(DISTINCT branch)::integer AS total_branches,
+                       GREATEST(COALESCE(SUM(quantity), 0), 0)::double precision AS total_quantity,
+                       COALESCE(SUM({revenue_sql}), 0)::double precision AS total_amount,
+                       MAX(month) AS data_as_of,
+                       MIN(month) AS data_from
+                FROM {SOURCE_TABLE}
+                WHERE {where}
                 """,
                 params,
             )
         ).fetchone()
-        status_counts = await (
-            await conn.execute(
-                "select status, count(*) value from analytics.dim_base_sku where product_type='L1' group by status"
-            )
-        ).fetchall()
         trend = await (
             await conn.execute(
                 f"""
-                select month, sum(gross_positive_qty) gross_qty,
-                       sum(return_qty) return_qty, sum(net_qty) net_qty
-                from analytics.mart_item_branch_month m
-                where true {branch_filter}
-                group by month order by month
+                SELECT month,
+                       GREATEST(COALESCE(SUM(quantity), 0), 0)::double precision AS total_quantity,
+                       COALESCE(SUM({revenue_sql}), 0)::double precision AS total_amount,
+                       COUNT(DISTINCT base_sku) FILTER (WHERE quantity > 0)::integer AS active_skus,
+                       COUNT(DISTINCT branch) FILTER (WHERE quantity > 0)::integer AS active_branches
+                FROM {SOURCE_TABLE}
+                WHERE {where}
+                GROUP BY month
+                ORDER BY month
                 """,
                 params,
             )
         ).fetchall()
-        regions = await (
+        top_products = await (
             await conn.execute(
                 f"""
-                select coalesce(b.region, 'Chưa xác định') region,
-                       sum(m.gross_positive_qty) gross_qty
-                from analytics.mart_item_branch_month m
-                join analytics.dim_branch b using(branch_code)
-                where true {branch_filter}
-                group by b.region order by gross_qty desc
+                SELECT base_sku,
+                       COALESCE(MAX(NULLIF(BTRIM(sku_name), '')), base_sku) AS sku_name,
+                       COALESCE(MAX(NULLIF(BTRIM(price_group), '')), 'N/A') AS size_code,
+                       GREATEST(COALESCE(SUM(quantity), 0), 0)::double precision AS total_quantity,
+                       COALESCE(SUM({revenue_sql}), 0)::double precision AS total_amount
+                FROM {SOURCE_TABLE}
+                WHERE {where}
+                GROUP BY base_sku
+                ORDER BY total_amount DESC, base_sku
+                LIMIT 10
                 """,
                 params,
             )
         ).fetchall()
-        sizes = await (
+        region_proportion = await (
             await conn.execute(
                 f"""
-                select coalesce(s.size_code, 'N/A') size_code,
-                       sum(m.gross_positive_qty) gross_qty
-                from analytics.mart_item_branch_month m
-                join analytics.dim_base_sku s using(base_sku)
-                where true {branch_filter}
-                group by s.size_code order by gross_qty desc limit 10
+                SELECT {REGION_SQL} AS name,
+                       COALESCE(SUM({revenue_sql}), 0)::double precision AS value
+                FROM {SOURCE_TABLE}
+                WHERE {where}
+                GROUP BY {REGION_SQL}
+                ORDER BY value DESC, name
                 """,
                 params,
             )
         ).fetchall()
-        dq = await (
+        branch_proportion = await (
             await conn.execute(
-                "select rule_code, severity, count(*) value from analytics.data_quality_issue group by rule_code,severity"
+                f"""
+                SELECT COALESCE(MAX(NULLIF(BTRIM(branch_name), '')), BTRIM(branch)) AS name,
+                       COALESCE(SUM({revenue_sql}), 0)::double precision AS value
+                FROM {SOURCE_TABLE}
+                WHERE {where}
+                GROUP BY BTRIM(branch)
+                ORDER BY value DESC, name
+                LIMIT 10
+                """,
+                params,
             )
         ).fetchall()
-    return {"kpis": kpis, "status_counts": status_counts, "trend": trend, "regions": regions, "sizes": sizes, "data_quality": dq}
+        pattern_proportion = await (
+            await conn.execute(
+                f"""
+                SELECT BTRIM(pattern_set) AS name,
+                       COALESCE(SUM({revenue_sql}), 0)::double precision AS value
+                FROM {SOURCE_TABLE}
+                WHERE {where} AND NULLIF(BTRIM(pattern_set), '') IS NOT NULL
+                GROUP BY BTRIM(pattern_set)
+                ORDER BY value DESC, name
+                LIMIT 10
+                """,
+                params,
+            )
+        ).fetchall()
+    return {
+        "kpis": dict(kpis) if kpis else {},
+        "trend": [dict(row) for row in trend],
+        "top_products": [dict(row) for row in top_products],
+        "region_proportion": [dict(row) for row in region_proportion],
+        "branch_proportion": [dict(row) for row in branch_proportion],
+        "pattern_proportion": [dict(row) for row in pattern_proportion],
+    }
 
 @router.get("/crosstab-history-pattern")
 async def crosstab_history_pattern(branch_code: str | None = None) -> list[dict]:

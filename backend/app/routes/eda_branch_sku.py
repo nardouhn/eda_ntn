@@ -16,6 +16,10 @@ from app.services.demand_pattern_episode import MART_TABLE
 router = APIRouter(prefix="/eda/branch-sku", tags=["EDA SKU x Branch"])
 SOURCE_TABLE = "source.mart_sku_branch_month"
 REGION_SQL = "COALESCE(NULLIF(BTRIM(region), ''), 'Chưa xác định')"
+ACTIVE_SQL = """(
+    LOWER(BTRIM(COALESCE(sku_status, ''))) = 'hoạt động'
+    AND LOWER(BTRIM(COALESCE(branch_status, ''))) = 'hoạt động'
+)"""
 
 
 def _add_months(value: date, offset: int) -> date:
@@ -256,6 +260,32 @@ async def get_branch_sku_detail(base_sku: str, branch: str) -> dict:
         history_rows = await (await conn.execute(f"""SELECT month, SUM(quantity)::double precision net_quantity,
             SUM(CASE WHEN quantity>0 THEN GREATEST(total_amount,0) ELSE 0 END)::double precision revenue
             FROM {SOURCE_TABLE} WHERE base_sku=%s AND branch=%s GROUP BY month ORDER BY month""",[base_sku,branch])).fetchall()
+        status_rows = await (await conn.execute(f"""
+            SELECT month,
+                   CASE WHEN BOOL_OR({ACTIVE_SQL}) THEN 'Hoạt động' ELSE 'Vô hiệu hóa' END status
+            FROM {SOURCE_TABLE}
+            WHERE base_sku=%s AND branch=%s
+            GROUP BY month
+            ORDER BY month
+            """, [base_sku, branch])).fetchall()
+        variant_rows = await (await conn.execute(f"""
+            WITH tagged AS (
+                SELECT *, MAX(month) OVER (PARTITION BY bravo_sku) AS variant_last_month
+                FROM {SOURCE_TABLE}
+                WHERE base_sku=%s AND branch=%s AND NULLIF(BTRIM(bravo_sku), '') IS NOT NULL
+            )
+            SELECT bravo_sku,
+                   COALESCE(MAX(NULLIF(BTRIM(sku_name), '')), bravo_sku) sku_name,
+                   CASE WHEN BOOL_OR({ACTIVE_SQL}) FILTER (WHERE month=variant_last_month)
+                        THEN 'Hoạt động' ELSE 'Vô hiệu hóa' END status,
+                   MIN(month) first_observed_month,
+                   MAX(month) last_observed_month,
+                   MAX(month) FILTER (WHERE quantity>0) last_positive_sale_month,
+                   GREATEST(COALESCE(SUM(quantity),0),0)::double precision gross_quantity
+            FROM tagged
+            GROUP BY bravo_sku
+            ORDER BY gross_quantity DESC, bravo_sku
+            """, [base_sku, branch])).fetchall()
     episode_list=[dict(row) for row in episodes]
     history=[]
     for source in history_rows:
@@ -267,4 +297,23 @@ async def get_branch_sku_detail(base_sku: str, branch: str) -> dict:
     if any(point["net_negative"] for point in history): warnings.append("Có tháng net quantity âm")
     if len(values)>=3 and stdev(values)>0 and max(values)>fmean(values)+3*stdev(values): warnings.append("Demand spike bất thường")
     if previous and previous["demand_pattern"]!=current["demand_pattern"]: warnings.append("Pattern changed so với episode trước")
-    return {"base_sku":base_sku,"branch_code":branch,"status":current["status"],"episodes":episode_list,"history":history,"warnings":warnings,"previous_demand_pattern":previous["demand_pattern"] if previous else None,"pattern_changed":bool(previous and previous["demand_pattern"]!=current["demand_pattern"]),"thresholds":{"adi":ADI_THRESHOLD,"cv2":CV2_THRESHOLD,"relaunch_gap_months":RELAUNCH_GAP_MONTHS}}
+    status_history=[]
+    for source in status_rows:
+        row=dict(source)
+        if not status_history or status_history[-1]["status"] != row["status"]:
+            status_history.append(row)
+    return {
+        "base_sku":base_sku,
+        "branch_code":branch,
+        "status":current["status"],
+        "data_as_of_month":history[-1]["month"] if history else current["end_month"],
+        "episodes":episode_list,
+        "current_episode_id":current["episode_id"],
+        "history":history,
+        "status_history":status_history,
+        "variants":[dict(row) for row in variant_rows],
+        "warnings":warnings,
+        "previous_demand_pattern":previous["demand_pattern"] if previous else None,
+        "pattern_changed":bool(previous and previous["demand_pattern"]!=current["demand_pattern"]),
+        "thresholds":{"adi":ADI_THRESHOLD,"cv2":CV2_THRESHOLD,"updated_at":THRESHOLD_UPDATED_AT,"relaunch_gap_months":RELAUNCH_GAP_MONTHS},
+    }

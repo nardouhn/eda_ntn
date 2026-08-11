@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { apiGet } from "@/lib/api";
 import { formatMonth, formatNumber, formatPercent } from "@/lib/format";
+import { ExternalFeatureInsights } from "./external-feature-insights";
 
 
 type Metric = "quantity" | "revenue" | "growth";
@@ -129,6 +130,18 @@ type DetailData = {
   thresholds: { adi: number; cv2: number; updated_at: string; relaunch_gap_months: number };
   variants: Variant[];
 };
+
+
+function normalizeDetailData(value: DetailData): DetailData {
+  return {
+    ...value,
+    history: Array.isArray(value.history) ? value.history : [],
+    status_history: Array.isArray(value.status_history) ? value.status_history : [],
+    episodes: Array.isArray(value.episodes) ? value.episodes : [],
+    warnings: Array.isArray(value.warnings) ? value.warnings : [],
+    variants: Array.isArray(value.variants) ? value.variants : [],
+  };
+}
 
 
 function isOverviewData(value: unknown): value is OverviewData {
@@ -379,7 +392,7 @@ export function EdaBranchSku({ branchCode }: { branchCode: string }) {
     setDetailLabel({ skuName, branchName });
     apiGet<DetailData>("/eda/branch-sku/detail", { base_sku: baseSku, branch: branchCodeValue })
       .then((response) => {
-        setDetail(response);
+        setDetail(normalizeDetailData(response));
         setError(null);
       })
       .catch((reason: Error) => setError(reason.message))
@@ -494,8 +507,9 @@ export function EdaBranchSku({ branchCode }: { branchCode: string }) {
 
       <article className="pair-panel warning-guide"><header><div><p className="eyebrow">WARNING GUIDE</p><h4>Định nghĩa cảnh báo</h4></div></header><div>{Object.entries(data?.warning_definitions ?? {}).map(([name, definition]) => <p key={`warning-definition-${name}`}><strong>{name}</strong><span>{definition}</span></p>)}</div></article>
 
+      <ExternalFeatureInsights level="branch-sku" />
       <p className="pair-method">Pattern hiện dùng ADI {data?.thresholds.adi ?? "—"} và CV² {data?.thresholds.cv2 ?? "—"}, cập nhật ngày {data?.thresholds.updated_at ? new Date(data.thresholds.updated_at).toLocaleDateString("vi-VN") : "—"}. Episode mới được tách sau gap ít nhất {data?.thresholds.relaunch_gap_months ?? "—"} tháng. ABC được tính theo tỷ trọng quantity dương trong từng chi nhánh. CSV xuất theo trang dữ liệu đang hiển thị và mở trực tiếp bằng Excel.</p>
-      <style jsx>{styles}</style>
+      <style>{styles}</style>
     </div>
   );
 }

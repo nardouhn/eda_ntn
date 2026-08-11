@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { apiGet } from "@/lib/api";
 import { formatMonth, formatNumber, formatPercent } from "@/lib/format";
+import { ExternalFeatureInsights } from "./external-feature-insights";
 
 
 type RegionKpis = {
@@ -317,7 +318,7 @@ export function EdaRegion({ initialDrillRegion = null, onRegionDrillDown, onDril
           <header><div><p className="eyebrow">LUMPY SKU</p><h4>SKU làm tăng tỷ trọng Lumpy</h4></div><span>Top 50 theo demand</span></header>
           <div className="region-table-wrap"><table className="region-table sku-drill"><thead><tr><th>Base SKU</th><th>Tên SKU</th><th>Demand</th><th>ABC</th><th>ADI</th><th>CV²</th><th>Độ phủ</th><th>Lịch sử</th></tr></thead><tbody>{drillSkus.map((sku) => <tr key={sku.base_sku}><td><strong>{sku.base_sku}</strong></td><td>{sku.sku_name}</td><td>{formatNumber(sku.gross_quantity)}</td><td>{sku.abc_class}</td><td>{metric(sku.adi)}</td><td>{sku.cv === null ? "—" : metric(sku.cv ** 2)}</td><td>{sku.selling_branch_count} CN</td><td>{sku.history_months}T / {sku.positive_months}T dương</td></tr>)}</tbody></table>{!drillSkus.length ? <p className="region-empty">Không có SKU Lumpy trong phạm vi chọn.</p> : null}</div>
         </article>
-        <style jsx>{regionStyles}</style>
+        <style>{regionStyles}</style>
       </div>
     );
   }
@@ -362,7 +363,8 @@ export function EdaRegion({ initialDrillRegion = null, onRegionDrillDown, onDril
         <div className="region-table-wrap"><table className="region-table"><thead><tr><th>Vùng</th><th>Demand (M2)</th><th>% tăng trưởng</th><th>% đóng góp</th><th>Inactive rate</th><th>Số chi nhánh</th><th>SKU active</th><th>ADI TB</th><th>CV² TB</th><th>Demand chủ đạo</th><th>Pattern mix</th><th>ABC mix</th></tr></thead><tbody>{data?.regions.map((row) => <tr key={row.region} onClick={() => openRegionDrillDown(row.region)}><td><button type="button">{row.region} →</button></td><td>{formatNumber(row.gross_quantity)}</td><td className={growthClass(row.growth)}>{formatPercent(row.growth)}</td><td>{formatPercent(row.contribution_pct)}</td><td>{formatPercent(row.inactive_rate)}</td><td>{formatNumber(row.branch_count)}</td><td>{formatNumber(row.active_sku_count)}</td><td>{metric(row.avg_adi)}</td><td>{metric(row.avg_cv2)}</td><td><span className={`demand ${row.dominant_demand.toLowerCase()}`}>{row.dominant_demand}</span></td><td><small>S {formatPercent(row.pattern_shares.Smooth)} · E {formatPercent(row.pattern_shares.Erratic)} · I {formatPercent(row.pattern_shares.Intermittent)} · L {formatPercent(row.pattern_shares.Lumpy)}</small></td><td><small>A {formatPercent(row.abc_shares.A)} · B {formatPercent(row.abc_shares.B)} · C {formatPercent(row.abc_shares.C)}</small></td></tr>)}</tbody></table></div>
       </article>
 
-      <style jsx>{regionStyles}</style>
+      <ExternalFeatureInsights level="region" />
+      <style>{regionStyles}</style>
     </div>
   );
 }

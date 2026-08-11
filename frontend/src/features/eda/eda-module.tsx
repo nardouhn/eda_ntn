@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { Branch } from "@/lib/types";
 import { EdaOverview } from "./eda-overview";
 import { EdaSku } from "./eda-sku";
 import { EdaBranch } from "./eda-branch";
@@ -9,7 +8,7 @@ import { EdaBranchSku } from "./eda-branch-sku";
 import { EdaRegion } from "./eda-region";
 import { EdaPatternSet } from "./eda-pattern-set";
 
-export function EdaModule(props: { branches: Branch[]; branchCode: string; onBranchChange: (value: string) => void }) {
+export function EdaModule() {
   const [activeTab, setActiveTab] = useState("overview");
   const [regionDrilldown, setRegionDrilldown] = useState<string | null>(null);
 
@@ -23,7 +22,7 @@ export function EdaModule(props: { branches: Branch[]; branchCode: string; onBra
   ];
 
   return (
-    <section className="module" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <section className="module eda-module">
       <div className="module-heading">
         <div>
           <p className="eyebrow">MODULE 02</p>
@@ -31,8 +30,8 @@ export function EdaModule(props: { branches: Branch[]; branchCode: string; onBra
         </div>
       </div>
       
-      <div style={{ display: 'flex', gap: '32px', marginTop: '24px', flexGrow: 1 }}>
-        <aside style={{ width: '220px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '4px', borderRight: '1px solid var(--border-color, #eaeaea)', paddingRight: '16px' }}>
+      <div className="eda-workspace">
+        <aside className="eda-sidebar">
           {sidebarItems.map(item => (
             <button
               key={item.id}
@@ -55,17 +54,29 @@ export function EdaModule(props: { branches: Branch[]; branchCode: string; onBra
           ))}
         </aside>
         
-        <div style={{ flexGrow: 1, minWidth: 0 }}>
-          {activeTab === 'overview' && <EdaOverview branches={props.branches} branchCode="__ALL__" onBranchChange={props.onBranchChange} />}
-          {activeTab === 'sku' && <EdaSku branchCode="__ALL__" />}
+        <div className="eda-content">
+          {activeTab === 'overview' && <EdaOverview />}
+          {activeTab === 'sku' && <EdaSku />}
           {activeTab === 'branch' && (regionDrilldown
             ? <EdaRegion initialDrillRegion={regionDrilldown} onDrillBack={() => { setRegionDrilldown(null); setActiveTab('region'); }} />
-            : <EdaBranch branchCode="__ALL__" />)}
+            : <EdaBranch />)}
           {activeTab === 'branch_sku' && <EdaBranchSku branchCode="__ALL__" />}
           {activeTab === 'region' && <EdaRegion onRegionDrillDown={(region) => { setRegionDrilldown(region); setActiveTab('branch'); }} />}
           {activeTab === 'pattern_set' && <EdaPatternSet />}
         </div>
       </div>
+      <style jsx>{`
+        .eda-module { display: flex; flex-direction: column; min-width: 0; height: 100%; }
+        .eda-workspace { display: flex; flex-grow: 1; gap: 24px; min-width: 0; margin-top: 24px; }
+        .eda-sidebar { display: flex; flex: 0 0 200px; flex-direction: column; gap: 4px; min-width: 0; padding-right: 16px; border-right: 1px solid var(--border-color, #eaeaea); }
+        .eda-sidebar button { flex: none; white-space: nowrap; }
+        .eda-content { flex: 1 1 auto; min-width: 0; }
+        @media (max-width: 1100px) {
+          .eda-workspace { flex-direction: column; gap: 14px; margin-top: 16px; }
+          .eda-sidebar { flex-basis: auto; width: 100%; flex-direction: row; overflow-x: auto; padding: 0 0 10px; border-right: 0; border-bottom: 1px solid var(--border-color, #eaeaea); scrollbar-width: thin; }
+          .eda-content { width: 100%; }
+        }
+      `}</style>
     </section>
   );
 }
