@@ -30,7 +30,7 @@ def _number(value) -> float | None:
     return float(value) if value is not None else None
 
 
-def _correlation(left: list[float], right: list[float]) -> float | None:
+def _correlation(left: list[float | None], right: list[float | None]) -> float | None:
     pairs = [(x, y) for x, y in zip(left, right) if x is not None and y is not None]
     if len(pairs) < 3:
         return None
@@ -106,6 +106,8 @@ async def _ensure_feature_table(conn) -> None:
 async def external_feature_analysis(
     level: str,
     metric: str = Query("quantity", pattern="^(quantity|revenue)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=50),
 ) -> dict:
     if level not in {"overview", "region", "branch", "sku", "branch-sku", "pattern-set"}:
         raise HTTPException(404, "Unknown external-feature analysis level")
@@ -127,7 +129,7 @@ async def external_feature_analysis(
                         FROM {SOURCE_TABLE} source
                         WHERE source.month::date BETWEEN %s AND %s
                         GROUP BY source.month::date
-                    ), monthly_features AS (
+                    ), monthly_feature_base AS (
                         SELECT thang AS month, MAX(trend_index) trend_index,
                                MAX(gg_trends_index)::double precision gg_trends_index,
                                MAX(gg_trends_lag1)::double precision gg_trends_lag1,
@@ -137,6 +139,11 @@ async def external_feature_analysis(
                                MAX(ty_trong_thanh_minh)::double precision ty_trong_thanh_minh
                         FROM {FEATURE_TABLE}
                         GROUP BY thang
+                    ), monthly_features AS (
+                        SELECT base.*,
+                               LAG(gg_trends_index, 2) OVER (ORDER BY month) gg_trends_lag2,
+                               LAG(gg_trends_index, 3) OVER (ORDER BY month) gg_trends_lag3
+                        FROM monthly_feature_base base
                     )
                     SELECT feature.*, COALESCE(sales.value, 0)::double precision value
                     FROM monthly_features feature
@@ -150,10 +157,12 @@ async def external_feature_analysis(
             points, decomposition = _decompose(raw)
             values = [point["value"] for point in points]
             correlations = {
-                field: _correlation(values, [float(point[field]) for point in points])
+                field: _correlation(values, [_number(point.get(field)) for point in points])
                 for field in (
                     "gg_trends_index",
                     "gg_trends_lag1",
+                    "gg_trends_lag2",
+                    "gg_trends_lag3",
                     "ty_trong_chay_tet",
                     "ty_trong_thang_gieng",
                     "ty_trong_thang_co_hon",
@@ -182,7 +191,9 @@ async def external_feature_analysis(
                     ), joined AS (
                         SELECT monthly.*, feature.flag_mua_mua,
                                feature.ty_trong_chay_tet::double precision ty_trong_chay_tet,
-                               feature.ty_trong_thang_co_hon::double precision ty_trong_thang_co_hon
+                               feature.ty_trong_thang_gieng::double precision ty_trong_thang_gieng,
+                               feature.ty_trong_thang_co_hon::double precision ty_trong_thang_co_hon,
+                               feature.ty_trong_thanh_minh::double precision ty_trong_thanh_minh
                         FROM monthly JOIN {FEATURE_TABLE} feature
                           ON feature.thang=monthly.month AND feature.vung=monthly.region
                     )
@@ -192,8 +203,15 @@ async def external_feature_analysis(
                            CORR(value, flag_mua_mua)::double precision rain_correlation,
                            CORR(value, ty_trong_chay_tet)::double precision tet_correlation,
                            CORR(value, ty_trong_thang_co_hon)::double precision co_hon_correlation,
+                           CORR(value, ty_trong_thanh_minh)::double precision thanh_minh_correlation,
                            REGR_SLOPE(value, ty_trong_chay_tet)::double precision tet_sensitivity,
-                           REGR_SLOPE(value, ty_trong_thang_co_hon)::double precision co_hon_sensitivity
+                           REGR_SLOPE(value, ty_trong_thang_co_hon)::double precision co_hon_sensitivity,
+                           AVG(value) FILTER(WHERE ty_trong_chay_tet > 0)::double precision tet_event_avg,
+                           AVG(value) FILTER(WHERE ty_trong_thang_gieng > 0)::double precision gieng_event_avg,
+                           AVG(value) FILTER(WHERE ty_trong_thang_co_hon > 0)::double precision co_hon_event_avg,
+                           AVG(value) FILTER(WHERE ty_trong_thanh_minh > 0)::double precision thanh_minh_event_avg,
+                           AVG(value) FILTER(WHERE ty_trong_chay_tet = 0 AND ty_trong_thang_gieng = 0
+                                                AND ty_trong_thang_co_hon = 0 AND ty_trong_thanh_minh = 0)::double precision baseline_avg
                     FROM joined GROUP BY region ORDER BY region
                     """,
                     [bounds["date_from"], bounds["date_to"]],
@@ -204,6 +222,10 @@ async def external_feature_analysis(
                 row = dict(source)
                 rainy, dry = _number(row["rainy_avg"]), _number(row["dry_avg"])
                 row["rainy_change_pct"] = rainy / dry - 1 if rainy is not None and dry else None
+                baseline = _number(row["baseline_avg"])
+                for event in ("tet", "gieng", "co_hon", "thanh_minh"):
+                    event_avg = _number(row[f"{event}_event_avg"])
+                    row[f"{event}_uplift_pct"] = event_avg / baseline - 1 if event_avg is not None and baseline else None
                 result.append(row)
             return {
                 "level": level,
@@ -235,19 +257,23 @@ async def external_feature_analysis(
                     SELECT data.branch_code,MAX(data.branch_name) branch_name,MAX(data.region) region,
                            COUNT(*)::integer observed_months,SUM(data.value)::double precision total_value,
                            AVG(ABS(data.normalized_value-region.region_normalized))::double precision operational_outlier_score,
-                           AVG(data.normalized_value-region.region_normalized)::double precision signed_deviation
+                           AVG(data.normalized_value-region.region_normalized)::double precision signed_deviation,
+                           COUNT(*) OVER()::integer total_count
                     FROM normalized data JOIN region_month region USING(region,month)
                     WHERE data.normalized_value IS NOT NULL
                     GROUP BY data.branch_code HAVING COUNT(*) >= 6
-                    ORDER BY operational_outlier_score DESC NULLS LAST LIMIT 50
+                    ORDER BY operational_outlier_score DESC NULLS LAST LIMIT %s OFFSET %s
                     """,
-                    [bounds["date_from"], bounds["date_to"]],
+                    [bounds["date_from"], bounds["date_to"], page_size, (page - 1) * page_size],
                 )
             ).fetchall()
             return {
                 "level": level,
                 "metric": metric,
                 "filters": dict(bounds),
+                "page": page,
+                "page_size": page_size,
+                "total": int(rows[0]["total_count"]) if rows else 0,
                 "items": [dict(row) for row in rows],
                 "methodology": "Chuẩn hóa mỗi chi nhánh theo mức trung bình riêng rồi so với baseline các chi nhánh cùng vùng trong đúng tháng; seasonal chung của vùng được loại khỏi score.",
             }
@@ -268,7 +294,7 @@ async def external_feature_analysis(
         feature_source = (
             FEATURE_TABLE
             if level == "branch-sku"
-            else f"(SELECT thang,MAX(gg_trends_index) gg_trends_index,MAX(gg_trends_lag1) gg_trends_lag1,MAX(ty_trong_chay_tet) ty_trong_chay_tet,MAX(ty_trong_thang_co_hon) ty_trong_thang_co_hon FROM {FEATURE_TABLE} GROUP BY thang)"
+            else f"(SELECT thang,MAX(gg_trends_index) gg_trends_index,MAX(gg_trends_lag1) gg_trends_lag1,MAX(ty_trong_chay_tet) ty_trong_chay_tet,MAX(ty_trong_thang_gieng) ty_trong_thang_gieng,MAX(ty_trong_thang_co_hon) ty_trong_thang_co_hon,MAX(ty_trong_thanh_minh) ty_trong_thanh_minh FROM {FEATURE_TABLE} GROUP BY thang)"
         )
         rows = await (
             await conn.execute(
@@ -283,7 +309,9 @@ async def external_feature_analysis(
                     SELECT monthly.*,feature.gg_trends_index::double precision gg_trends_index,
                            feature.gg_trends_lag1::double precision gg_trends_lag1,
                            feature.ty_trong_chay_tet::double precision ty_trong_chay_tet,
-                           feature.ty_trong_thang_co_hon::double precision ty_trong_thang_co_hon
+                           feature.ty_trong_thang_gieng::double precision ty_trong_thang_gieng,
+                           feature.ty_trong_thang_co_hon::double precision ty_trong_thang_co_hon,
+                           feature.ty_trong_thanh_minh::double precision ty_trong_thanh_minh
                     FROM monthly JOIN {feature_source} feature ON {feature_join}
                 )
                 SELECT entity_key AS {key_alias},MAX(entity_name) {name_alias},
@@ -291,15 +319,24 @@ async def external_feature_analysis(
                        CORR(value,gg_trends_index)::double precision gg_correlation,
                        CORR(value,gg_trends_lag1)::double precision gg_lag1_correlation,
                        CORR(value,ty_trong_chay_tet)::double precision tet_correlation,
-                       CORR(value,ty_trong_thang_co_hon)::double precision co_hon_correlation
+                       CORR(value,ty_trong_thang_co_hon)::double precision co_hon_correlation,
+                       CORR(value,ty_trong_thanh_minh)::double precision thanh_minh_correlation,
+                       COUNT(*) FILTER(WHERE ty_trong_chay_tet > 0)::integer tet_event_months,
+                       COUNT(*) FILTER(WHERE ty_trong_thanh_minh > 0)::integer thanh_minh_event_months,
+                       AVG(value) FILTER(WHERE ty_trong_chay_tet > 0)::double precision tet_event_avg,
+                       AVG(value) FILTER(WHERE ty_trong_thanh_minh > 0)::double precision thanh_minh_event_avg,
+                       AVG(value) FILTER(WHERE ty_trong_chay_tet = 0 AND ty_trong_thang_gieng = 0
+                                            AND ty_trong_thang_co_hon = 0 AND ty_trong_thanh_minh = 0)::double precision baseline_avg,
+                       COUNT(*) OVER()::integer total_count
                 FROM joined GROUP BY entity_key HAVING COUNT(*) >= 6
                 ORDER BY GREATEST(
                     COALESCE(ABS(CORR(value,gg_trends_lag1)),0),
                     COALESCE(ABS(CORR(value,ty_trong_chay_tet)),0),
-                    COALESCE(ABS(CORR(value,ty_trong_thang_co_hon)),0)
-                ) DESC, total_value DESC LIMIT 50
+                    COALESCE(ABS(CORR(value,ty_trong_thang_co_hon)),0),
+                    COALESCE(ABS(CORR(value,ty_trong_thanh_minh)),0)
+                ) DESC, total_value DESC LIMIT %s OFFSET %s
                 """,
-                [bounds["date_from"], bounds["date_to"]],
+                [bounds["date_from"], bounds["date_to"], page_size, (page - 1) * page_size],
             )
         ).fetchall()
         items = []
@@ -307,6 +344,13 @@ async def external_feature_analysis(
         for source in rows:
             row = dict(source)
             row["coverage_pct"] = int(row["observed_months"]) / total_months
+            baseline = _number(row["baseline_avg"])
+            for event in ("tet", "thanh_minh"):
+                event_avg = _number(row[f"{event}_event_avg"])
+                row[f"{event}_uplift_pct"] = event_avg / baseline - 1 if event_avg is not None and baseline else None
+            row["gg_confidence"] = "reliable" if int(row["observed_months"]) >= 18 else "low"
+            row["tet_confidence"] = "reliable" if int(row["observed_months"]) >= 18 and int(row["tet_event_months"]) >= 2 else "low"
+            row["thanh_minh_confidence"] = "reliable" if int(row["observed_months"]) >= 18 and int(row["thanh_minh_event_months"]) >= 2 else "low"
             items.append(row)
         methodology = {
             "sku": "Correlation trên demand tháng đã gộp toàn vùng theo Base SKU; feature không có vùng được distinct/group một lần theo tháng.",
@@ -317,6 +361,9 @@ async def external_feature_analysis(
             "level": level,
             "metric": metric,
             "filters": dict(bounds),
+            "page": page,
+            "page_size": page_size,
+            "total": int(rows[0]["total_count"]) if rows else 0,
             "items": items,
             "methodology": methodology,
         }

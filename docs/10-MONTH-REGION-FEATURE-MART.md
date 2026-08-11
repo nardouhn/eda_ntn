@@ -119,16 +119,16 @@ Ngày âm lịch và tiết khí được khóa theo các bảng chuyển đổi
 
 ## Phân tích được dùng trong các tab EDA
 
-API dùng chung: `GET /api/v1/eda/external-features/{level}?metric=quantity|revenue`.
+API dùng chung: `GET /api/v1/eda/external-features/{level}?metric=quantity|revenue&page=1&page_size=50`. `page_size` bị chặn tối đa 50; response của các bảng chi tiết có `page`, `page_size`, `total`.
 
 | Tab / `level` | Grain trước khi tính | Phân tích triển khai |
 |---|---|---|
-| Tổng quan / `overview` | Một dòng/tháng toàn hệ thống | Overlay doanh số với tỷ trọng chạy Tết và tháng cô hồn; Pearson correlation với Google Trends hiện tại/lag1 và các sự kiện; decomposition cộng tính `linear trend + seasonal residual trung bình theo tháng trong năm`. Feature không có vùng được group đúng một lần theo `thang`. |
-| Vùng / `region` | Một dòng/tháng/vùng | Trung bình mùa mưa so với mùa khô, tỷ lệ thay đổi, correlation cờ mưa và độ nhạy chạy Tết/tháng cô hồn theo từng vùng. |
+| Tổng quan / `overview` | Một dòng/tháng toàn hệ thống | Demand và Google Trends được chuẩn hóa index 100; so sánh correlation lag 0–3; event ribbon cho chạy Tết, tháng Giêng, cô hồn, Thanh Minh; decomposition `linear trend + seasonal residual trung bình theo tháng trong năm`. Feature không có vùng được group đúng một lần theo `thang`. |
+| Vùng / `region` | Một dòng/tháng/vùng | Dumbbell demand trung bình mùa mưa–mùa khô; event uplift của Tết/Giêng/cô hồn/Thanh Minh so với baseline ngoài bốn sự kiện; bảng correlation theo vùng. |
 | Chi nhánh / `branch` | Một dòng/tháng/chi nhánh | Chuẩn hóa doanh số mỗi chi nhánh theo mean riêng, sau đó so với baseline các chi nhánh cùng vùng trong đúng tháng. `operational_outlier_score` là trung bình độ lệch tuyệt đối sau khi seasonal chung của vùng đã được loại. |
-| SKU / `sku` | Một dòng/tháng/Base SKU toàn hệ thống | Correlation riêng từng SKU với Google Trends hiện tại/lag1, chạy Tết và tháng cô hồn; chỉ hiển thị chuỗi có ít nhất 6 tháng quan sát. |
-| SKU × chi nhánh / `branch-sku` | Một dòng/tháng/Base SKU/chi nhánh | Thống kê correlation và coverage mô tả; không fit model riêng từng cặp do dữ liệu thưa. |
-| Bộ mẫu / `pattern-set` | Một dòng/tháng/pattern set | `pattern_set` hiện nằm trên dòng sales của `source.mart_sku_branch_month`, nên được gộp demand theo bộ mẫu × tháng rồi mới join feature và tính correlation. |
+| SKU / `sku` | Một dòng/tháng/Base SKU toàn hệ thống | Bubble chart `Corr GG lag1 × event uplift`, kích thước theo demand; chuyển giữa Tết/Thanh Minh; nhãn tin cậy yêu cầu tối thiểu 18 tháng và 2 kỳ sự kiện. |
+| SKU × chi nhánh / `branch-sku` | Một dòng/tháng/Base SKU/chi nhánh | Bubble chart và bảng mô tả có coverage/confidence; không fit model riêng từng cặp do dữ liệu thưa. |
+| Bộ mẫu / `pattern-set` | Một dòng/tháng/pattern set | Gộp demand theo bộ mẫu × tháng; bubble chart Google Trends lag1 với uplift Tết/Thanh Minh và bảng confidence. |
 
 Các correlation và rainy-vs-dry là thống kê mô tả, không tự suy diễn quan hệ nhân quả. Missing month không bị biến thành zero; `observed_months` và `coverage_pct` được trả về để đánh giá độ tin cậy. Người dùng có thể chuyển riêng từng panel giữa sản lượng và doanh thu.
 
