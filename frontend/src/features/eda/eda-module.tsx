@@ -18,7 +18,7 @@ export function EdaModule() {
     { id: "overview", label: "Tổng quan" },
     { id: "sku", label: "SKU" },
     { id: "branch", label: "Chi nhánh" },
-    { id: "branch_forecast", label: "Forecast Chi nhánh" },
+    { id: "branch_forecast", label: "Tương tác & Cụm CN" },
     { id: "branch_sku", label: "SKU × Chi nhánh" },
     { id: "region", label: "Vùng" },
     { id: "pattern_set", label: "Bộ mẫu" },

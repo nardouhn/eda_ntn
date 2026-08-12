@@ -48,6 +48,11 @@ type BranchRow = {
   portfolio_hhi_top20: number;
   forecastability_segment: string;
   recommended_strategy: string;
+  external_sensitivity: number;
+  top_external_driver: string;
+  cluster_id: number;
+  cluster_label: string;
+  cluster_model: string;
 };
 type HistoryPoint = {
   month: string;
@@ -60,6 +65,10 @@ type HistoryPoint = {
 };
 type ProfilePoint = { month_number: number; mean_quantity: number | null; seasonal_index: number | null; observations: number };
 type TopSku = { base_sku: string; sku_name: string | null; quantity: number; share: number; rank: number };
+type Association = { branch?: string; branch_name?: string; region: string; feature: string; label: string; availability: string; observations: number; correlation: number | null; event_uplift: number | null };
+type FeaturePair = { feature_x: string; feature_y: string; label_x: string; label_y: string; observations: number; correlation: number | null };
+type Cluster = { cluster_id: number; label: string; recommended_model: string; branch_count: number; centroid: Record<string, number>; branches: string[] };
+type NetworkLink = { branch_a: string; branch_b: string; region_a: string; region_b: string; region_scope: string; overlap_months: number; same_month_correlation: number; strongest_lead_direction: string; strongest_lead_correlation: number | null };
 type Data = {
   data_from: string;
   data_as_of_month: string;
@@ -74,21 +83,22 @@ type Data = {
     seasonal_candidate_count: number;
     volatile_count: number;
     low_coverage_count: number;
+    cluster_count: number;
+    strong_external_count: number;
   };
   segment_distribution: Array<{ segment: string; count: number }>;
   branches: BranchRow[];
   selected: BranchRow & { history: HistoryPoint[]; monthly_profile: ProfilePoint[]; top_skus: TopSku[] };
+  branch_feature_associations: Association[];
+  region_feature_associations: Association[];
+  feature_interaction_matrix: FeaturePair[];
+  clusters: Cluster[];
+  branch_network: NetworkLink[];
+  selected_branch_links: NetworkLink[];
   methodology: Record<string, string>;
 };
 
-const SEGMENT_COLORS: Record<string, string> = {
-  STABLE: "#16d8c2",
-  SEASONAL: "#a78bfa",
-  TRENDING: "#23afff",
-  VOLATILE: "#ff7373",
-  LOW_COVERAGE: "#ffc14d",
-  INACTIVE: "#64748b",
-};
+const CLUSTER_COLORS = ["#16d8c2", "#a78bfa", "#ff7373", "#23afff", "#ffc14d"];
 const MONTHS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12"];
 
 function compact(value: unknown): string {
@@ -97,6 +107,12 @@ function compact(value: unknown): string {
 
 function optionalPercent(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : formatPercent(value);
+}
+
+function heatColor(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "transparent";
+  const alpha = .08 + Math.min(Math.abs(value), 1) * .72;
+  return value >= 0 ? `rgba(22,216,194,${alpha})` : `rgba(255,115,115,${alpha})`;
 }
 
 export function EdaBranchForecast() {
@@ -108,7 +124,7 @@ export function EdaBranchForecast() {
 
   useEffect(() => {
     let cancelled = false;
-    apiGet<Data>("/eda/branch-forecast/overview", { region: region || undefined, branch: branch || undefined })
+    apiGet<Data>("/eda/branch-drivers/overview", { region: region || undefined, branch: branch || undefined })
       .then((response) => {
         if (cancelled) return;
         setData(response);
@@ -124,15 +140,19 @@ export function EdaBranchForecast() {
     () => (data?.branches ?? []).filter((row) => row.cv !== null && row.naive_wape !== null).map((row) => ({
       ...row,
       x: row.cv,
-      y: row.naive_wape,
+      y: row.external_sensitivity,
       z: Math.max(row.mean_monthly_quantity, 1),
     })),
     [data?.branches],
   );
-  const growthRows = useMemo(
-    () => (data?.branches ?? []).filter((row) => row.recent_growth !== null).toSorted((a, b) => Math.abs(b.recent_growth ?? 0) - Math.abs(a.recent_growth ?? 0)).slice(0, 12),
-    [data?.branches],
+  const selectedDrivers = useMemo(
+    () => (data?.branch_feature_associations ?? []).filter((row) => row.branch === data?.selected.branch).toSorted((a, b) => Math.abs(b.correlation ?? 0) - Math.abs(a.correlation ?? 0)),
+    [data?.branch_feature_associations, data?.selected],
   );
+  const featureLabels = useMemo(() => [...new Map((data?.feature_interaction_matrix ?? []).map((row) => [row.feature_x, row.label_x])).entries()], [data?.feature_interaction_matrix]);
+  const featureMatrix = useMemo(() => new Map((data?.feature_interaction_matrix ?? []).map((row) => [`${row.feature_x}\u0000${row.feature_y}`, row.correlation])), [data?.feature_interaction_matrix]);
+  const sensitivityBranches = useMemo(() => (data?.branches ?? []).slice(0, 20), [data?.branches]);
+  const sensitivityMap = useMemo(() => new Map((data?.branch_feature_associations ?? []).map((row) => [`${row.branch}\u0000${row.feature}`, row.correlation])), [data?.branch_feature_associations]);
 
   function changeRegion(value: string) {
     setLoading(true);
@@ -147,7 +167,7 @@ export function EdaBranchForecast() {
   return (
     <div className="bf-page">
       <header className="bf-heading">
-        <div><p className="eyebrow">BRANCH QUANTITY FORECAST</p><h3>EDA Forecast sản lượng Chi nhánh</h3><p>Đánh giá forecastability ở đúng grain chi nhánh × tháng trước khi chọn model.</p></div>
+        <div><p className="eyebrow">BRANCH DRIVER ANALYSIS</p><h3>Drivers, tương tác & phân cụm Chi nhánh</h3><p>EDA quantity của chi nhánh hoạt động để đánh giá feature và định hướng nhóm model.</p></div>
         <span>{loading ? "Đang phân tích…" : `${formatMonth(data?.data_from ?? "")} → ${formatMonth(data?.data_as_of_month ?? "")}`}</span>
       </header>
 
@@ -155,29 +175,29 @@ export function EdaBranchForecast() {
         <label>Vùng<select value={region} onChange={(event) => changeRegion(event.target.value)}><option value="">Tất cả vùng</option>{data?.options.regions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <label>Chi nhánh<select value={branch} onChange={(event) => changeBranch(event.target.value)}>{data?.options.branches.map((item) => <option key={item.branch} value={item.branch}>{item.branch} — {item.branch_name}</option>)}</select></label>
       </section>
-      {error ? <div className="error-banner">Không tải được EDA forecast chi nhánh: {error}</div> : null}
+      {error ? <div className="error-banner">Không tải được phân tích tương tác chi nhánh: {error}</div> : null}
 
       <section className="bf-kpis">
-        <article><span>Chi nhánh hoạt động</span><strong>{formatNumber(data?.kpis.active_branch_count)}</strong><small>trên {formatNumber(data?.kpis.branch_count)} chi nhánh</small></article>
-        <article><span>Median Naive WAPE</span><strong>{optionalPercent(data?.kpis.median_naive_wape)}</strong><small>baseline tháng trước</small></article>
-        <article><span>Seasonal candidate</span><strong>{formatNumber(data?.kpis.seasonal_candidate_count)}</strong><small>lag-12 thắng Naive ≥10%</small></article>
-        <article><span>Chuỗi biến động</span><strong>{formatNumber(data?.kpis.volatile_count)}</strong><small>CV tổng tháng ≥40%</small></article>
-        <article><span>Coverage thấp</span><strong>{formatNumber(data?.kpis.low_coverage_count)}</strong><small>cần global model/shrinkage</small></article>
+        <article><span>Chi nhánh hoạt động</span><strong>{formatNumber(data?.kpis.active_branch_count)}</strong><small>chỉ phân tích scope active</small></article>
+        <article><span>Median Naive WAPE</span><strong>{optionalPercent(data?.kpis.median_naive_wape)}</strong><small>baseline để so model</small></article>
+        <article><span>Phân cụm hành vi</span><strong>{formatNumber(data?.kpis.cluster_count)}</strong><small>K-means cho model routing</small></article>
+        <article><span>Nhạy external</span><strong>{formatNumber(data?.kpis.strong_external_count)}</strong><small>|corr| an toàn ≥35%</small></article>
+        <article><span>Liên kết CN mạnh</span><strong>{formatNumber(data?.branch_network.filter((row) => Math.abs(row.same_month_correlation) >= .7).length)}</strong><small>đồng biến ≥70%</small></article>
       </section>
 
       <section className="bf-grid">
         <article className="bf-card">
-          <header><h4>Bản đồ Forecastability</h4><p>X = CV · Y = Naive WAPE · Bubble = quantity TB/tháng</p></header>
-          <div className="bf-chart"><ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 15, right: 20, bottom: 12, left: 8 }}><CartesianGrid stroke="#1d3547"/><XAxis type="number" dataKey="x" name="CV" tickFormatter={(value: number) => formatPercent(value)}/><YAxis type="number" dataKey="y" name="Naive WAPE" tickFormatter={(value: number) => formatPercent(value)}/><ZAxis type="number" dataKey="z" range={[40, 420]}/><ReferenceLine x={.4} stroke="#ffc14d" strokeDasharray="4 3"/><Tooltip cursor={{ strokeDasharray: "3 3" }} formatter={(value: unknown, name: unknown) => [name === "CV" || name === "Naive WAPE" ? formatPercent(Number(value)) : compact(value), String(name)]}/><Scatter data={scatter}>{scatter.map((row) => <Cell key={row.branch} fill={SEGMENT_COLORS[row.forecastability_segment] ?? "#64748b"}/>)}</Scatter></ScatterChart></ResponsiveContainer></div>
+          <header><h4>Bản đồ cụm hành vi</h4><p>X = CV · Y = độ nhạy external lớn nhất · Bubble = quantity TB/tháng</p></header>
+          <div className="bf-chart"><ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 15, right: 20, bottom: 12, left: 8 }}><CartesianGrid stroke="#1d3547"/><XAxis type="number" dataKey="x" name="CV" tickFormatter={(value: number) => formatPercent(value)}/><YAxis type="number" dataKey="y" name="External sensitivity" tickFormatter={(value: number) => formatPercent(value)}/><ZAxis type="number" dataKey="z" range={[40, 420]}/><ReferenceLine x={.4} stroke="#ffc14d" strokeDasharray="4 3"/><ReferenceLine y={.35} stroke="#a78bfa" strokeDasharray="4 3"/><Tooltip cursor={{ strokeDasharray: "3 3" }} formatter={(value: unknown, name: unknown) => [name === "CV" || name === "External sensitivity" ? formatPercent(Number(value)) : compact(value), String(name)]}/><Scatter data={scatter}>{scatter.map((row) => <Cell key={row.branch} fill={CLUSTER_COLORS[row.cluster_id % CLUSTER_COLORS.length]}/>)}</Scatter></ScatterChart></ResponsiveContainer></div>
         </article>
 
         <article className="bf-card">
-          <header><h4>Biến động 3 tháng gần nhất</h4><p>So với 3 tháng liền trước; ưu tiên trị tuyệt đối lớn.</p></header>
-          <div className="bf-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={growthRows} layout="vertical" margin={{ left: 22, right: 18 }}><CartesianGrid stroke="#1d3547" horizontal={false}/><XAxis type="number" tickFormatter={(value: number) => formatPercent(value)}/><YAxis type="category" dataKey="branch" width={48}/><Tooltip formatter={(value: unknown) => [formatPercent(Number(value)), "Growth 3T"]}/><ReferenceLine x={0} stroke="#7f9aaf"/><Bar dataKey="recent_growth" radius={[0,4,4,0]}>{growthRows.map((row) => <Cell key={row.branch} fill={(row.recent_growth ?? 0) >= 0 ? "#16d8c2" : "#ff7373"}/>)}</Bar></BarChart></ResponsiveContainer></div>
+          <header><h4>Các cụm và hướng model</h4><p>Cụm thống kê để routing model, không phải nhãn nghiệp vụ cố định.</p></header>
+          <div className="bf-clusters">{data?.clusters.map((item) => <article key={item.cluster_id} style={{ borderColor: CLUSTER_COLORS[item.cluster_id % CLUSTER_COLORS.length] }}><b>C{item.cluster_id} · {item.label}</b><strong>{item.branch_count} CN</strong><p>{item.recommended_model}</p><small>CV {formatPercent(item.centroid.cv)} · External {formatPercent(item.centroid.external_sensitivity)} · Seasonal gain {formatPercent(item.centroid.seasonal_gain)}</small></article>)}</div>
         </article>
 
         <article className="bf-card wide">
-          <header><h4>{data?.selected.branch} — {data?.selected.branch_name}</h4><p>{data?.selected.recommended_strategy} · Segment {data?.selected.forecastability_segment}</p></header>
+          <header><h4>{data?.selected.branch} — {data?.selected.branch_name}</h4><p>C{data?.selected.cluster_id} · {data?.selected.cluster_label} · {data?.selected.cluster_model}</p></header>
           <div className="bf-detail-kpis"><span>Mean/tháng <b>{formatNumber(data?.selected.mean_monthly_quantity)}</b></span><span>CV <b>{optionalPercent(data?.selected.cv)}</b></span><span>Naive WAPE <b>{optionalPercent(data?.selected.naive_wape)}</b></span><span>Seasonal gain <b>{optionalPercent(data?.selected.seasonal_gain)}</b></span><span>Top-5 SKU share <b>{optionalPercent(data?.selected.top5_sku_share)}</b></span></div>
           <div className="bf-chart large"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={data?.selected.history ?? []} margin={{ top: 12, right: 18, bottom: 4, left: 5 }}><CartesianGrid stroke="#1d3547" strokeDasharray="3 3"/><XAxis dataKey="month" tickFormatter={(value: string) => formatMonth(value)} tick={{ fontSize: 10 }}/><YAxis tickFormatter={compact}/><Tooltip labelFormatter={(value: unknown) => formatMonth(String(value))} formatter={(value: unknown, name: unknown) => [formatNumber(Number(value)), String(name)]}/><Legend/><Bar dataKey="quantity" name="Quantity" fill="#16d8c255"/><Line dataKey="moving_average_3" name="MA3" stroke="#16d8c2" strokeWidth={2.4} dot={false}/><Line dataKey="moving_average_6" name="MA6" stroke="#23afff" dot={false}/><Line dataKey="same_month_last_year" name="Cùng tháng năm trước" stroke="#a78bfa" strokeDasharray="5 3" dot={false}/></ComposedChart></ResponsiveContainer></div>
         </article>
@@ -193,15 +213,42 @@ export function EdaBranchForecast() {
         </article>
       </section>
 
+      <section className="bf-grid">
+        <article className="bf-card wide">
+          <header><h4>Độ nhạy quantity với external features theo Chi nhánh</h4><p>Correlation trên log1p(quantity), top 20 chi nhánh theo quy mô. GG hiện tại có cảnh báo chưa biết tại origin.</p></header>
+          <div className="bf-heat-wrap"><table className="bf-heat"><thead><tr><th>Chi nhánh</th>{featureLabels.map(([key, label]) => <th key={key}>{label}</th>)}</tr></thead><tbody>{sensitivityBranches.map((row) => <tr key={row.branch}><th>{row.branch}<small>{row.region}</small></th>{featureLabels.map(([key]) => { const value = sensitivityMap.get(`${row.branch}\u0000${key}`); return <td key={`${row.branch}-${key}`} style={{ background: heatColor(value) }}>{optionalPercent(value ?? null)}</td>; })}</tr>)}</tbody></table></div>
+        </article>
+
+        <article className="bf-card">
+          <header><h4>Drivers của {data?.selected.branch}</h4><p>Uplift chỉ hiện khi feature có cả tháng bật và tắt.</p></header>
+          <div className="bf-driver-list">{selectedDrivers.map((row) => <div key={row.feature}><span>{row.label}<small>{row.availability} · n={row.observations}</small></span><i><em className={(row.correlation ?? 0) >= 0 ? "positive" : "negative"} style={{ width: `${Math.min(Math.abs(row.correlation ?? 0) * 100, 100)}%` }}/></i><b>{optionalPercent(row.correlation)}</b><small>uplift {optionalPercent(row.event_uplift)}</small></div>)}</div>
+        </article>
+
+        <article className="bf-card">
+          <header><h4>Drivers theo Vùng</h4><p>Aggregate quantity vùng giúp tín hiệu ổn định hơn từng chi nhánh.</p></header>
+          <div className="bf-region-driver">{data?.region_feature_associations.filter((row) => row.availability !== "unknown_at_origin").toSorted((a,b) => Math.abs(b.correlation ?? 0)-Math.abs(a.correlation ?? 0)).slice(0,16).map((row) => <div key={`${row.region}-${row.feature}`}><span>{row.region}</span><b>{row.label}</b><em style={{ color: (row.correlation ?? 0) >= 0 ? "#16d8c2" : "#ff7373" }}>{optionalPercent(row.correlation)}</em></div>)}</div>
+        </article>
+
+        <article className="bf-card wide">
+          <header><h4>Tương tác giữa các feature</h4><p>Correlation feature–feature trên grain tháng × vùng; ô đậm cảnh báo thông tin gần trùng nhau.</p></header>
+          <div className="bf-heat-wrap"><table className="bf-heat square"><thead><tr><th>Feature</th>{featureLabels.map(([key, label]) => <th key={key}>{label}</th>)}</tr></thead><tbody>{featureLabels.map(([rowKey, rowLabel]) => <tr key={rowKey}><th>{rowLabel}</th>{featureLabels.map(([columnKey]) => { const value=featureMatrix.get(`${rowKey}\u0000${columnKey}`); return <td key={`${rowKey}-${columnKey}`} style={{ background: heatColor(value) }}>{value === undefined || value === null ? "—" : value.toFixed(2)}</td>; })}</tr>)}</tbody></table></div>
+        </article>
+
+        <article className="bf-card wide">
+          <header><h4>Liên hệ giữa các Chi nhánh</h4><p>Same-month là đồng biến; lead–lag 1 tháng chỉ là tín hiệu thăm dò, không phải quan hệ nhân quả.</p></header>
+          <div className="bf-link-grid">{data?.selected_branch_links.map((row) => <div key={`${row.branch_a}-${row.branch_b}`}><b>{row.branch_a} ↔ {row.branch_b}</b><span>Đồng tháng {optionalPercent(row.same_month_correlation)}</span><span>{row.strongest_lead_direction} · {optionalPercent(row.strongest_lead_correlation)}</span><small>{row.region_scope} ({row.region_a} / {row.region_b}) · {row.overlap_months} tháng giao nhau</small></div>)}</div>
+        </article>
+      </section>
+
       <section className="bf-card">
-        <header><h4>Bảng chẩn đoán toàn bộ chi nhánh</h4><p>Click một dòng để mở lịch sử chi tiết phía trên.</p></header>
-        <div className="bf-table-wrap"><table><thead><tr><th>Chi nhánh</th><th>Segment</th><th>Quantity TB/T</th><th>Growth 3T</th><th>CV</th><th>Naive WAPE</th><th>Seasonal WAPE</th><th>Seasonal gain</th><th>Coverage</th><th>Top-5 share</th><th>Hướng model</th></tr></thead><tbody>{data?.branches.map((row) => <tr key={row.branch} className={row.branch === data.selected.branch ? "selected" : ""} onClick={() => changeBranch(row.branch)}><td><strong>{row.branch}</strong><small>{row.branch_name} · {row.region}</small></td><td><span className="bf-segment" style={{ borderColor: SEGMENT_COLORS[row.forecastability_segment], color: SEGMENT_COLORS[row.forecastability_segment] }}>{row.forecastability_segment}</span></td><td>{formatNumber(row.mean_monthly_quantity)}</td><td>{optionalPercent(row.recent_growth)}</td><td>{optionalPercent(row.cv)}</td><td>{optionalPercent(row.naive_wape)}</td><td>{optionalPercent(row.seasonal_naive_wape)}</td><td>{optionalPercent(row.seasonal_gain)}</td><td>{formatPercent(row.coverage)}</td><td>{formatPercent(row.top5_sku_share)}</td><td>{row.recommended_strategy}</td></tr>)}</tbody></table></div>
+        <header><h4>Bảng phân cụm và định hướng model</h4><p>Click một dòng để đổi toàn bộ panel chi tiết sang chi nhánh đó.</p></header>
+        <div className="bf-table-wrap"><table><thead><tr><th>Chi nhánh</th><th>Cụm</th><th>Quantity TB/T</th><th>CV</th><th>External sensitivity</th><th>Driver mạnh nhất</th><th>Naive WAPE</th><th>Seasonal gain</th><th>Coverage</th><th>Top-5 share</th><th>Hướng model</th></tr></thead><tbody>{data?.branches.map((row) => <tr key={row.branch} className={row.branch === data.selected.branch ? "selected" : ""} onClick={() => changeBranch(row.branch)}><td><strong>{row.branch}</strong><small>{row.branch_name} · {row.region}</small></td><td><span className="bf-segment" style={{ borderColor: CLUSTER_COLORS[row.cluster_id % CLUSTER_COLORS.length], color: CLUSTER_COLORS[row.cluster_id % CLUSTER_COLORS.length] }}>C{row.cluster_id} · {row.cluster_label}</span></td><td>{formatNumber(row.mean_monthly_quantity)}</td><td>{optionalPercent(row.cv)}</td><td>{optionalPercent(row.external_sensitivity)}</td><td>{row.top_external_driver}</td><td>{optionalPercent(row.naive_wape)}</td><td>{optionalPercent(row.seasonal_gain)}</td><td>{formatPercent(row.coverage)}</td><td>{formatPercent(row.top5_sku_share)}</td><td>{row.cluster_model}</td></tr>)}</tbody></table></div>
       </section>
 
       <details className="bf-method"><summary>Cách tính và giới hạn</summary>{Object.entries(data?.methodology ?? {}).map(([key, value]) => <p key={key}><strong>{key}:</strong> {value}</p>)}</details>
 
       <style jsx>{`
-        .bf-page{display:grid;gap:13px;color:#ecf7ff}.bf-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px}.bf-heading h3{font-size:22px;margin:4px 0}.bf-heading p{margin:0;color:#8ea9ba}.bf-heading>span{font-size:12px;color:#9ab5c7}.bf-filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#081725;border:1px solid #193448;border-radius:10px;padding:12px}.bf-filters label{display:grid;gap:5px;color:#91adbf;font-size:11px}.bf-filters select{background:#0d1d2c;color:#ecf7ff;border:1px solid #233a4c;border-radius:7px;padding:9px}.bf-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.bf-kpis article,.bf-card{background:linear-gradient(145deg,#0d2030,#091722);border:1px solid #193448;border-radius:10px}.bf-kpis article{padding:14px}.bf-kpis span,.bf-kpis small{display:block;color:#8ea9ba;font-size:11px}.bf-kpis strong{display:block;font-size:21px;margin:6px 0}.bf-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}.bf-card{padding:15px;overflow:hidden}.bf-card.wide{grid-column:1/-1}.bf-card header{margin-bottom:10px}.bf-card h4{margin:0 0 4px}.bf-card header p{margin:0;color:#809bad;font-size:11px}.bf-chart{height:300px}.bf-chart.large{height:360px}.bf-detail-kpis{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}.bf-detail-kpis span{border:1px solid #244358;background:#0a1a28;border-radius:6px;padding:7px;color:#8ea9ba;font-size:10px}.bf-detail-kpis b{color:#ecf7ff;margin-left:4px}.bf-top-skus{display:grid;gap:8px}.bf-top-skus>div{display:grid;grid-template-columns:minmax(130px,1fr) 1.3fr 55px;align-items:center;gap:9px;font-size:11px}.bf-top-skus span{overflow:hidden;text-overflow:ellipsis}.bf-top-skus small{display:block;color:#6f8b9d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bf-top-skus i{height:7px;background:#142b3c;border-radius:99px;overflow:hidden}.bf-top-skus em{display:block;height:100%;background:linear-gradient(90deg,#16d8c2,#23afff)}.bf-top-skus b{text-align:right}.bf-table-wrap{overflow:auto}.bf-table-wrap table{border-collapse:collapse;width:100%;min-width:1450px}.bf-table-wrap th,.bf-table-wrap td{border:1px solid #193448;padding:9px;font-size:11px;white-space:nowrap;text-align:right}.bf-table-wrap th{background:#101e31;color:#d9e9f4}.bf-table-wrap th:first-child,.bf-table-wrap td:first-child,.bf-table-wrap th:last-child,.bf-table-wrap td:last-child{text-align:left}.bf-table-wrap tbody tr{cursor:pointer}.bf-table-wrap tbody tr:hover,.bf-table-wrap tbody tr.selected{background:#10293b}.bf-table-wrap td strong,.bf-table-wrap td small{display:block}.bf-table-wrap td strong{color:#16d8c2}.bf-table-wrap td small{color:#7894a6}.bf-segment{display:inline-flex;border:1px solid;border-radius:99px;padding:3px 7px;font-size:9px;font-weight:700}.bf-method{background:#081725;border:1px solid #193448;border-radius:10px;padding:13px;color:#91adbf;font-size:12px}.bf-method summary{cursor:pointer;color:#d9e9f4;font-weight:700}.bf-method strong{color:#16d8c2;text-transform:capitalize}@media(max-width:1100px){.bf-kpis{grid-template-columns:repeat(2,1fr)}.bf-grid{grid-template-columns:1fr}.bf-card.wide{grid-column:auto}}@media(max-width:700px){.bf-heading{align-items:flex-start;flex-direction:column}.bf-filters,.bf-kpis{grid-template-columns:1fr}}
+        .bf-page{display:grid;gap:13px;color:#ecf7ff}.bf-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px}.bf-heading h3{font-size:22px;margin:4px 0}.bf-heading p{margin:0;color:#8ea9ba}.bf-heading>span{font-size:12px;color:#9ab5c7}.bf-filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#081725;border:1px solid #193448;border-radius:10px;padding:12px}.bf-filters label{display:grid;gap:5px;color:#91adbf;font-size:11px}.bf-filters select{background:#0d1d2c;color:#ecf7ff;border:1px solid #233a4c;border-radius:7px;padding:9px}.bf-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.bf-kpis article,.bf-card{background:linear-gradient(145deg,#0d2030,#091722);border:1px solid #193448;border-radius:10px}.bf-kpis article{padding:14px}.bf-kpis span,.bf-kpis small{display:block;color:#8ea9ba;font-size:11px}.bf-kpis strong{display:block;font-size:21px;margin:6px 0}.bf-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}.bf-card{padding:15px;overflow:hidden}.bf-card.wide{grid-column:1/-1}.bf-card header{margin-bottom:10px}.bf-card h4{margin:0 0 4px}.bf-card header p{margin:0;color:#809bad;font-size:11px}.bf-chart{height:300px}.bf-chart.large{height:360px}.bf-detail-kpis{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}.bf-detail-kpis span{border:1px solid #244358;background:#0a1a28;border-radius:6px;padding:7px;color:#8ea9ba;font-size:10px}.bf-detail-kpis b{color:#ecf7ff;margin-left:4px}.bf-clusters{display:grid;gap:8px;max-height:300px;overflow:auto}.bf-clusters article{display:grid;grid-template-columns:1fr auto;gap:4px;border:1px solid;border-left-width:4px;border-radius:8px;padding:10px;background:#0a1926}.bf-clusters article p,.bf-clusters article small{grid-column:1/-1;margin:0;color:#8ea9ba;font-size:10px}.bf-clusters article strong{color:#ecf7ff}.bf-top-skus{display:grid;gap:8px}.bf-top-skus>div{display:grid;grid-template-columns:minmax(130px,1fr) 1.3fr 55px;align-items:center;gap:9px;font-size:11px}.bf-top-skus span{overflow:hidden;text-overflow:ellipsis}.bf-top-skus small{display:block;color:#6f8b9d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bf-top-skus i{height:7px;background:#142b3c;border-radius:99px;overflow:hidden}.bf-top-skus em{display:block;height:100%;background:linear-gradient(90deg,#16d8c2,#23afff)}.bf-top-skus b{text-align:right}.bf-heat-wrap{overflow:auto;max-height:520px}.bf-heat{border-collapse:separate;border-spacing:2px;width:100%;min-width:900px}.bf-heat th,.bf-heat td{padding:7px;font-size:10px;text-align:center;border-radius:3px}.bf-heat th{background:#101e31;color:#d9e9f4;position:sticky;top:0;z-index:1}.bf-heat th:first-child{text-align:left;left:0;z-index:2}.bf-heat th small{display:block;color:#6f8b9d}.bf-heat.square td{min-width:82px}.bf-driver-list{display:grid;gap:7px}.bf-driver-list>div{display:grid;grid-template-columns:minmax(110px,1fr) 1fr 52px 80px;align-items:center;gap:7px;font-size:10px}.bf-driver-list span small{display:block;color:#6f8b9d}.bf-driver-list i{height:6px;background:#142b3c;border-radius:99px;overflow:hidden}.bf-driver-list i em{display:block;height:100%}.bf-driver-list i .positive{background:#16d8c2}.bf-driver-list i .negative{background:#ff7373}.bf-region-driver{display:grid;gap:6px;max-height:330px;overflow:auto}.bf-region-driver>div{display:grid;grid-template-columns:100px 1fr 52px;gap:7px;padding:7px;background:#0a1926;border-radius:5px;font-size:10px}.bf-region-driver em{text-align:right;font-style:normal}.bf-link-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.bf-link-grid>div{display:grid;gap:4px;background:#0a1926;border:1px solid #193448;border-radius:7px;padding:10px;font-size:10px}.bf-link-grid b{color:#16d8c2}.bf-link-grid small{color:#7894a6}.bf-table-wrap{overflow:auto}.bf-table-wrap table{border-collapse:collapse;width:100%;min-width:1450px}.bf-table-wrap th,.bf-table-wrap td{border:1px solid #193448;padding:9px;font-size:11px;white-space:nowrap;text-align:right}.bf-table-wrap th{background:#101e31;color:#d9e9f4}.bf-table-wrap th:first-child,.bf-table-wrap td:first-child,.bf-table-wrap th:last-child,.bf-table-wrap td:last-child{text-align:left}.bf-table-wrap tbody tr{cursor:pointer}.bf-table-wrap tbody tr:hover,.bf-table-wrap tbody tr.selected{background:#10293b}.bf-table-wrap td strong,.bf-table-wrap td small{display:block}.bf-table-wrap td strong{color:#16d8c2}.bf-table-wrap td small{color:#7894a6}.bf-segment{display:inline-flex;border:1px solid;border-radius:99px;padding:3px 7px;font-size:9px;font-weight:700}.bf-method{background:#081725;border:1px solid #193448;border-radius:10px;padding:13px;color:#91adbf;font-size:12px}.bf-method summary{cursor:pointer;color:#d9e9f4;font-weight:700}.bf-method strong{color:#16d8c2;text-transform:capitalize}@media(max-width:1100px){.bf-kpis{grid-template-columns:repeat(2,1fr)}.bf-grid{grid-template-columns:1fr}.bf-card.wide{grid-column:auto}.bf-link-grid{grid-template-columns:1fr 1fr}}@media(max-width:700px){.bf-heading{align-items:flex-start;flex-direction:column}.bf-filters,.bf-kpis{grid-template-columns:1fr}.bf-link-grid{grid-template-columns:1fr}}
       `}</style>
     </div>
   );

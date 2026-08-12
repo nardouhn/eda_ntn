@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import date
-from math import sqrt
+from itertools import permutations
+from math import copysign, log1p, sqrt
 from statistics import fmean, median
 from typing import Any
 
@@ -11,11 +12,22 @@ from fastapi import APIRouter, HTTPException
 from app.db import get_pool
 
 
-router = APIRouter(prefix="/eda/branch-forecast", tags=["EDA Branch Forecast"])
+router = APIRouter(prefix="/eda/branch-drivers", tags=["EDA Branch Drivers"])
 
 SOURCE_TABLE = "source.mart_sku_branch_month"
 REGION_SQL = "COALESCE(NULLIF(BTRIM(region), ''), 'Chưa xác định')"
 ACTIVE_SQL = "LOWER(BTRIM(COALESCE(branch_status, ''))) = 'hoạt động'"
+
+FEATURES = {
+    "trend_index": ("Trend index", "known_future"),
+    "gg_trends_index": ("GG hiện tại", "unknown_at_origin"),
+    "gg_trends_lag1": ("GG lag 1", "forecast_safe"),
+    "flag_mua_mua": ("Mùa mưa", "known_future"),
+    "ty_trong_chay_tet": ("Chạy Tết", "known_future"),
+    "ty_trong_thang_gieng": ("Tháng Giêng", "known_future"),
+    "ty_trong_thang_co_hon": ("Tháng cô hồn", "known_future"),
+    "ty_trong_thanh_minh": ("Thanh Minh", "known_future"),
+}
 
 
 def _add_months(value: date, offset: int) -> date:
@@ -46,10 +58,164 @@ def _wape(pairs: list[tuple[float, float]]) -> float | None:
     return sum(abs(forecast - actual) for forecast, actual in pairs) / denominator if denominator else None
 
 
+def _signed_log1p(value: float) -> float:
+    return copysign(log1p(abs(value)), value)
+
+
 def _rolling_mean(values: dict[date, float], target: date, months: int) -> float | None:
     observed = [values.get(_add_months(target, -offset)) for offset in range(months)]
     available = [value for value in observed if value is not None]
     return fmean(available) if available else None
+
+
+def _feature_associations(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for feature, (label, availability) in FEATURES.items():
+        pairs = [
+            (_signed_log1p(float(row["quantity"])), float(row[feature]))
+            for row in rows if row.get(feature) is not None
+        ]
+        active = [float(row["quantity"]) for row in rows if row.get(feature) is not None and float(row[feature]) > 0]
+        baseline = [float(row["quantity"]) for row in rows if row.get(feature) is not None and float(row[feature]) == 0]
+        uplift = fmean(active) / fmean(baseline) - 1 if active and baseline and fmean(baseline) > 0 else None
+        result.append({
+            "feature": feature,
+            "label": label,
+            "availability": availability,
+            "observations": len(pairs),
+            "correlation": _correlation(pairs),
+            "event_uplift": uplift,
+        })
+    return result
+
+
+def _feature_matrix(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    keys = list(FEATURES)
+    for left in keys:
+        for right in keys:
+            pairs = [(float(row[left]), float(row[right])) for row in rows if row.get(left) is not None and row.get(right) is not None]
+            result.append({
+                "feature_x": left,
+                "feature_y": right,
+                "label_x": FEATURES[left][0],
+                "label_y": FEATURES[right][0],
+                "observations": len(pairs),
+                "correlation": 1.0 if left == right else _correlation(pairs),
+            })
+    return result
+
+
+def _branch_network(by_branch: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    series = {
+        branch: {row["month"]: _signed_log1p(float(row["quantity"])) for row in rows}
+        for branch, rows in by_branch.items()
+    }
+    branches = sorted(series)
+    links: list[dict[str, Any]] = []
+    for index, left in enumerate(branches):
+        for right in branches[index + 1:]:
+            common = sorted(set(series[left]) & set(series[right]))
+            same = _correlation([(series[left][month], series[right][month]) for month in common])
+            left_leads = _correlation([
+                (series[left][month], series[right][_add_months(month, 1)])
+                for month in common if _add_months(month, 1) in series[right]
+            ])
+            right_leads = _correlation([
+                (series[right][month], series[left][_add_months(month, 1)])
+                for month in common if _add_months(month, 1) in series[left]
+            ])
+            if same is not None:
+                left_region = str(by_branch[left][-1]["region"])
+                right_region = str(by_branch[right][-1]["region"])
+                links.append({
+                    "branch_a": left,
+                    "branch_b": right,
+                    "region_a": left_region,
+                    "region_b": right_region,
+                    "region_scope": "Cùng vùng" if left_region == right_region else "Khác vùng",
+                    "overlap_months": len(common),
+                    "same_month_correlation": same,
+                    "a_leads_b_correlation": left_leads,
+                    "b_leads_a_correlation": right_leads,
+                    "strongest_lead_direction": (
+                        f"{left} → {right}" if abs(left_leads or 0) >= abs(right_leads or 0) else f"{right} → {left}"
+                    ),
+                    "strongest_lead_correlation": max((left_leads, right_leads), key=lambda value: abs(value or 0)),
+                })
+    return sorted(links, key=lambda row: abs(row["same_month_correlation"]), reverse=True)
+
+
+def _cluster_branches(rows: list[dict[str, Any]], k: int = 4) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    fields = ["cv", "naive_wape", "trend_rate_6m", "seasonal_gain", "top5_sku_share", "external_sensitivity"]
+    raw = [[float(row.get(field) or 0.0) for field in fields] for row in rows]
+    medians = [median(vector[column] for vector in raw) for column in range(len(fields))]
+    sorted_columns = [sorted(vector[column] for vector in raw) for column in range(len(fields))]
+    q1 = [column[len(column) // 4] for column in sorted_columns]
+    q3 = [column[(len(column) * 3) // 4] for column in sorted_columns]
+    scales = [(upper - lower) or 1.0 for lower, upper in zip(q1, q3)]
+    vectors = [
+        [max(-3.0, min(3.0, (value - medians[column]) / scales[column])) for column, value in enumerate(vector)]
+        for vector in raw
+    ]
+    cluster_count = min(k, len(vectors))
+    ordered_vectors = sorted(vectors, key=sum)
+    centers = [ordered_vectors[min(len(vectors) - 1, int((index + .5) * len(vectors) / cluster_count))][:] for index in range(cluster_count)]
+    assignments = [0] * len(vectors)
+    for _ in range(30):
+        updated = [min(range(len(centers)), key=lambda idx: sum((a-b) ** 2 for a, b in zip(vector, centers[idx]))) for vector in vectors]
+        if updated == assignments and _ > 0:
+            break
+        assignments = updated
+        for cluster in range(len(centers)):
+            members = [vector for vector, assigned in zip(vectors, assignments) if assigned == cluster]
+            if members:
+                centers[cluster] = [fmean(vector[column] for vector in members) for column in range(len(fields))]
+    cluster_rows: list[dict[str, Any]] = []
+    for cluster in range(len(centers)):
+        members = [row for row, assigned in zip(rows, assignments) if assigned == cluster]
+        if not members:
+            continue
+        centroid = {field: fmean(float(row.get(field) or 0.0) for row in members) for field in fields}
+        cluster_rows.append({
+            "cluster_id": cluster,
+            "branch_count": len(members),
+            "centroid": centroid,
+            "branches": [row["branch"] for row in members],
+        })
+    archetypes = {
+        "volatile": ("Biến động & khó baseline", "Global robust/Tweedie + ensemble"),
+        "external": ("Nhạy mùa vụ/sự kiện", "Global model + calendar/event interaction"),
+        "trend": ("Xu hướng gần đây", "Global trend-aware + Holt baseline"),
+        "concentrated": ("Danh mục tập trung/pooled", "Global model + SKU-mix/region shrinkage"),
+    }
+    scores: list[dict[str, float]] = []
+    for cluster in cluster_rows:
+        centroid = cluster["centroid"]
+        relative = {field: (centroid[field] - medians[index]) / scales[index] for index, field in enumerate(fields)}
+        scores.append({
+            "volatile": relative["cv"] + relative["naive_wape"],
+            "external": relative["seasonal_gain"] + relative["external_sensitivity"],
+            "trend": abs(centroid["trend_rate_6m"]) / scales[2],
+            "concentrated": relative["top5_sku_share"],
+        })
+    names = list(archetypes)
+    assignment = max(
+        permutations(names, len(cluster_rows)),
+        key=lambda candidate: sum(scores[index][name] for index, name in enumerate(candidate)),
+    )
+    for cluster, name in zip(cluster_rows, assignment):
+        cluster["label"], cluster["recommended_model"] = archetypes[name]
+    lookup = {branch: cluster["cluster_id"] for cluster in cluster_rows for branch in cluster["branches"]}
+    meta = {cluster["cluster_id"]: cluster for cluster in cluster_rows}
+    for row in rows:
+        cluster = meta[lookup[row["branch"]]]
+        row["cluster_id"] = cluster["cluster_id"]
+        row["cluster_label"] = cluster["label"]
+        row["cluster_model"] = cluster["recommended_model"]
+    return cluster_rows
 
 
 def _branch_metrics(rows: list[dict[str, Any]], global_min: date, global_max: date) -> dict[str, Any]:
@@ -183,21 +349,43 @@ async def get_branch_forecast_overview(
                            MAX(branch_name) AS branch_name,
                            MAX({REGION_SQL}) AS region,
                            BOOL_OR({ACTIVE_SQL}) AS branch_is_active,
-                           GREATEST(SUM(quantity),0)::double precision AS demand,
+                           SUM(quantity)::double precision AS demand,
                            SUM(line_count)::bigint AS line_count
                     FROM {SOURCE_TABLE}
                     WHERE branch IS NOT NULL AND base_sku IS NOT NULL AND month IS NOT NULL
                     GROUP BY branch,base_sku,month
+                ), branch_month AS (
+                    SELECT branch,month,MAX(branch_name) AS branch_name,MAX(region) AS region,
+                           BOOL_OR(branch_is_active) AS is_active,
+                           SUM(demand)::double precision AS quantity,
+                           COUNT(*) FILTER (WHERE demand>0)::integer AS active_skus,
+                           SUM(line_count)::bigint AS line_count
+                    FROM sku_month
+                    GROUP BY branch,month
                 )
-                SELECT branch,month,MAX(branch_name) AS branch_name,MAX(region) AS region,
-                       BOOL_OR(branch_is_active) AS is_active,
-                       SUM(demand)::double precision AS quantity,
-                       COUNT(*) FILTER (WHERE demand>0)::integer AS active_skus,
-                       SUM(line_count)::bigint AS line_count
-                FROM sku_month
-                GROUP BY branch,month
+                SELECT branch_month.*,
+                       feature.trend_index,feature.gg_trends_index,feature.gg_trends_lag1,
+                       feature.flag_mua_mua,feature.ty_trong_chay_tet,
+                       feature.ty_trong_thang_gieng,feature.ty_trong_thang_co_hon,
+                       feature.ty_trong_thanh_minh
+                FROM branch_month
+                LEFT JOIN analytics.dim_month_region_features feature
+                  ON feature.thang=branch_month.month
+                 AND feature.vung=CASE
+                    WHEN UPPER(BTRIM(branch_month.region)) IN ('TNB','TÂY NAM BỘ') THEN 'Tây Nam Bộ'
+                    WHEN UPPER(BTRIM(branch_month.region)) IN ('DNB','ĐÔNG NAM BỘ') THEN 'Đông Nam Bộ'
+                    WHEN UPPER(BTRIM(branch_month.region)) IN ('MT-TNG','TÂY NGUYÊN') THEN 'Tây Nguyên'
+                    ELSE 'Khác' END
                 ORDER BY branch,month
                 """
+            )
+        ).fetchall()
+        feature_rows = await (
+            await conn.execute(
+                """SELECT thang,vung,trend_index,gg_trends_index,gg_trends_lag1,
+                          flag_mua_mua,ty_trong_chay_tet,ty_trong_thang_gieng,
+                          ty_trong_thang_co_hon,ty_trong_thanh_minh
+                   FROM analytics.dim_month_region_features ORDER BY thang,vung"""
             )
         ).fetchall()
         sku_rows = await (
@@ -206,7 +394,7 @@ async def get_branch_forecast_overview(
                 WITH bounds AS (SELECT MAX(month)::date AS max_month FROM {SOURCE_TABLE}),
                 sku AS (
                     SELECT branch,base_sku,MAX(sku_name) AS sku_name,
-                           SUM(GREATEST(monthly_net,0))::double precision AS quantity
+                           SUM(monthly_net)::double precision AS quantity
                     FROM (
                         SELECT branch,base_sku,month,MAX(sku_name) AS sku_name,
                                SUM(quantity)::double precision AS monthly_net
@@ -231,9 +419,13 @@ async def get_branch_forecast_overview(
     by_branch: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for source in monthly_rows:
         by_branch[source["branch"]].append(dict(source))
-    metrics = [_branch_metrics(rows, global_min, global_max) for rows in by_branch.values()]
+    all_metrics = [_branch_metrics(rows, global_min, global_max) for rows in by_branch.values()]
+    active_codes = {row["branch"] for row in all_metrics if row["status"] == "Hoạt động"}
+    by_branch = {code: rows for code, rows in by_branch.items() if code in active_codes}
+    metrics = [row for row in all_metrics if row["status"] == "Hoạt động"]
     if region:
         metrics = [row for row in metrics if row["region"] == region]
+        by_branch = {row["branch"]: by_branch[row["branch"]] for row in metrics}
     metrics.sort(key=lambda row: row["mean_monthly_quantity"], reverse=True)
     if not metrics:
         raise HTTPException(404, "No branches for selected region")
@@ -250,15 +442,35 @@ async def get_branch_forecast_overview(
         row["top5_sku_share"] = sum(float(item["share"]) for item in top if item["rank"] <= 5)
         row["portfolio_hhi_top20"] = sum(float(item["share"]) ** 2 for item in top)
 
+    branch_associations: list[dict[str, Any]] = []
+    for row in metrics:
+        associations = _feature_associations(by_branch[row["branch"]])
+        safe_associations = [item for item in associations if item["availability"] != "unknown_at_origin"]
+        row["external_sensitivity"] = max((abs(item["correlation"] or 0.0) for item in safe_associations), default=0.0)
+        row["top_external_driver"] = max(safe_associations, key=lambda item: abs(item["correlation"] or 0.0))["label"]
+        branch_associations.extend({"branch": row["branch"], "branch_name": row["branch_name"], "region": row["region"], **item} for item in associations)
+    clusters = _cluster_branches(metrics)
     selected_code = branch if branch and any(row["branch"] == branch for row in metrics) else metrics[0]["branch"]
     selected = next(row for row in metrics if row["branch"] == selected_code)
-    selected_detail = {
-        **selected,
-        "top_skus": sku_by_branch.get(selected_code, []),
-    }
+    selected_detail = {**selected, "top_skus": sku_by_branch.get(selected_code, [])}
     table_rows = [{key: value for key, value in row.items() if key not in {"history", "monthly_profile"}} for row in metrics]
     segment_counts = Counter(row["forecastability_segment"] for row in metrics)
-    active_metrics = [row for row in metrics if row["status"] == "Hoạt động"]
+    network = _branch_network(by_branch)
+    region_month: dict[tuple[str, date], dict[str, Any]] = {}
+    for rows in by_branch.values():
+        for row in rows:
+            key = (row["region"], row["month"])
+            if key not in region_month:
+                region_month[key] = {**row, "quantity": 0.0}
+            region_month[key]["quantity"] += float(row["quantity"])
+    region_associations: list[dict[str, Any]] = []
+    by_region: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for (region_name, _), row in region_month.items():
+        by_region[region_name].append(row)
+    for region_name, rows in by_region.items():
+        region_associations.extend({"region": region_name, **item} for item in _feature_associations(rows))
+    selected_links = [row for row in network if selected_code in {row["branch_a"], row["branch_b"]}][:15]
+    active_metrics = metrics
     return {
         "data_from": global_min,
         "data_as_of_month": global_max,
@@ -277,6 +489,8 @@ async def get_branch_forecast_overview(
             "seasonal_candidate_count": segment_counts["SEASONAL"],
             "volatile_count": segment_counts["VOLATILE"],
             "low_coverage_count": segment_counts["LOW_COVERAGE"],
+            "cluster_count": len(clusters),
+            "strong_external_count": sum(row["external_sensitivity"] >= .35 for row in metrics),
         },
         "segment_distribution": [
             {"segment": segment, "count": count}
@@ -284,10 +498,19 @@ async def get_branch_forecast_overview(
         ],
         "branches": table_rows,
         "selected": selected_detail,
+        "branch_feature_associations": branch_associations,
+        "region_feature_associations": region_associations,
+        "feature_interaction_matrix": _feature_matrix([dict(row) for row in feature_rows]),
+        "clusters": clusters,
+        "branch_network": network[:100],
+        "selected_branch_links": selected_links,
         "methodology": {
-            "target": "Tổng theo tháng của max(net quantity từng Base SKU tại chi nhánh, 0).",
+            "target": "SUM(quantity) của toàn bộ dòng theo chi nhánh × tháng; không lấy MAX và không chặn quantity âm ở tầng SKU.",
             "seasonal": "Seasonal candidate khi có ít nhất 6 origin lag-12 và Seasonal Naive cải thiện WAPE >=10% so với Naive.",
             "coverage": "LOW_COVERAGE khi dưới 12 tháng quan sát hoặc coverage lịch dưới 80%.",
             "concentration": "Top-1/Top-5 share và HHI đo mức tổng chi nhánh phụ thuộc vào vài SKU.",
+            "drivers": "Correlation dùng log1p(quantity), chỉ mô tả liên hệ; GG hiện tại bị đánh dấu unknown-at-origin.",
+            "network": "Đồng biến và lead-lag giữa chi nhánh là tín hiệu thăm dò, không chứng minh chi nhánh này gây demand cho chi nhánh khác.",
+            "clustering": "K-means 4 cụm với robust scaling/IQR và chặn outlier trên CV, Naive WAPE, trend, seasonal gain, Top-5 share và external sensitivity; tên cụm là đặc trưng tương đối nổi trội để routing model, không phải nhãn nghiệp vụ cố định.",
         },
     }
