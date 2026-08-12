@@ -106,6 +106,85 @@ def _feature_matrix(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+def _lag_associations(values: dict[date, float], lags: tuple[int, ...] = (1, 2, 3, 6, 12)) -> list[dict[str, Any]]:
+    transformed = {month: _signed_log1p(value) for month, value in values.items()}
+    return [
+        {
+            "lag": lag,
+            "observations": len(pairs := [
+                (transformed[_add_months(month, -lag)], actual)
+                for month, actual in transformed.items() if _add_months(month, -lag) in transformed
+            ]),
+            "correlation": _correlation(pairs),
+        }
+        for lag in lags
+    ]
+
+
+def _region_influence(by_branch: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    raw = {branch: {row["month"]: float(row["quantity"]) for row in rows} for branch, rows in by_branch.items()}
+    regions = {branch: str(rows[-1]["region"]) for branch, rows in by_branch.items()}
+    result: list[dict[str, Any]] = []
+    for branch, own in raw.items():
+        peers: dict[date, float] = defaultdict(float)
+        for other, series in raw.items():
+            if other != branch and regions[other] == regions[branch]:
+                for month, value in series.items():
+                    peers[month] += value
+        correlations = []
+        for lag in (0, 1, 2, 3):
+            pairs = [
+                (_signed_log1p(peers[_add_months(month, -lag)]), _signed_log1p(value))
+                for month, value in own.items() if _add_months(month, -lag) in peers
+            ]
+            correlations.append({"lag": lag, "observations": len(pairs), "correlation": _correlation(pairs)})
+        total_own, total_peers = sum(own.values()), sum(peers.values())
+        best = max(correlations, key=lambda row: abs(row["correlation"] or 0.0))
+        result.append({
+            "branch": branch,
+            "region": regions[branch],
+            "branch_share_of_region": total_own / (total_own + total_peers) if total_own + total_peers else None,
+            "correlations": correlations,
+            "strongest_lag": best["lag"],
+            "strongest_correlation": best["correlation"],
+        })
+    return result
+
+
+def _sku_influence(rows: list[dict[str, Any]], branch_values: dict[date, float]) -> list[dict[str, Any]]:
+    by_sku: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        by_sku[str(row["base_sku"])].append(row)
+    total_abs = sum(abs(float(row["quantity"])) for row in rows) or 1.0
+    result = []
+    for base_sku, sku_rows in by_sku.items():
+        series = {row["month"]: float(row["quantity"]) for row in sku_rows}
+        same_pairs = [
+            (_signed_log1p(value), _signed_log1p(branch_values[month] - value))
+            for month, value in series.items() if month in branch_values
+        ]
+        lag_rows = []
+        for lag in (1, 2, 3):
+            pairs = [
+                (_signed_log1p(series[_add_months(month, -lag)]), _signed_log1p(total))
+                for month, total in branch_values.items() if _add_months(month, -lag) in series
+            ]
+            lag_rows.append({"lag": lag, "observations": len(pairs), "correlation": _correlation(pairs)})
+        best = max(lag_rows, key=lambda row: abs(row["correlation"] or 0.0))
+        net = sum(series.values())
+        result.append({
+            "base_sku": base_sku,
+            "sku_name": max((row.get("sku_name") or "" for row in sku_rows), default=""),
+            "net_quantity": net,
+            "absolute_quantity_share": sum(abs(value) for value in series.values()) / total_abs,
+            "same_month_remainder_correlation": _correlation(same_pairs),
+            "strongest_lag": best["lag"],
+            "strongest_lag_correlation": best["correlation"],
+            "lag_correlations": lag_rows,
+        })
+    return sorted(result, key=lambda row: row["absolute_quantity_share"], reverse=True)
+
+
 def _branch_network(by_branch: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     series = {
         branch: {row["month"]: _signed_log1p(float(row["quantity"])) for row in rows}
@@ -117,14 +196,19 @@ def _branch_network(by_branch: dict[str, list[dict[str, Any]]]) -> list[dict[str
         for right in branches[index + 1:]:
             common = sorted(set(series[left]) & set(series[right]))
             same = _correlation([(series[left][month], series[right][month]) for month in common])
-            left_leads = _correlation([
-                (series[left][month], series[right][_add_months(month, 1)])
-                for month in common if _add_months(month, 1) in series[right]
-            ])
-            right_leads = _correlation([
-                (series[right][month], series[left][_add_months(month, 1)])
-                for month in common if _add_months(month, 1) in series[left]
-            ])
+            directional = []
+            for lag in (1, 2, 3):
+                directional.extend([
+                    {"direction": f"{left} → {right}", "lag": lag, "correlation": _correlation([
+                        (series[left][month], series[right][_add_months(month, lag)])
+                        for month in common if _add_months(month, lag) in series[right]
+                    ])},
+                    {"direction": f"{right} → {left}", "lag": lag, "correlation": _correlation([
+                        (series[right][month], series[left][_add_months(month, lag)])
+                        for month in common if _add_months(month, lag) in series[left]
+                    ])},
+                ])
+            best_lead = max(directional, key=lambda row: abs(row["correlation"] or 0.0))
             if same is not None:
                 left_region = str(by_branch[left][-1]["region"])
                 right_region = str(by_branch[right][-1]["region"])
@@ -136,12 +220,10 @@ def _branch_network(by_branch: dict[str, list[dict[str, Any]]]) -> list[dict[str
                     "region_scope": "Cùng vùng" if left_region == right_region else "Khác vùng",
                     "overlap_months": len(common),
                     "same_month_correlation": same,
-                    "a_leads_b_correlation": left_leads,
-                    "b_leads_a_correlation": right_leads,
-                    "strongest_lead_direction": (
-                        f"{left} → {right}" if abs(left_leads or 0) >= abs(right_leads or 0) else f"{right} → {left}"
-                    ),
-                    "strongest_lead_correlation": max((left_leads, right_leads), key=lambda value: abs(value or 0)),
+                    "lead_lag_details": directional,
+                    "strongest_lead_direction": best_lead["direction"],
+                    "strongest_lead_lag": best_lead["lag"],
+                    "strongest_lead_correlation": best_lead["correlation"],
                 })
     return sorted(links, key=lambda row: abs(row["same_month_correlation"]), reverse=True)
 
@@ -452,6 +534,41 @@ async def get_branch_forecast_overview(
     clusters = _cluster_branches(metrics)
     selected_code = branch if branch and any(row["branch"] == branch for row in metrics) else metrics[0]["branch"]
     selected = next(row for row in metrics if row["branch"] == selected_code)
+    async with get_pool().connection() as conn:
+        selected_sku_month_rows = await (
+            await conn.execute(
+                f"""SELECT base_sku,MAX(sku_name) AS sku_name,month::date AS month,
+                           SUM(quantity)::double precision AS quantity
+                    FROM {SOURCE_TABLE}
+                    WHERE branch=%s AND month IS NOT NULL AND base_sku IS NOT NULL
+                    GROUP BY base_sku,month ORDER BY base_sku,month""",
+                (selected_code,),
+            )
+        ).fetchall()
+    selected_values = {row["month"]: float(row["quantity"]) for row in by_branch[selected_code]}
+    selected_lags = _lag_associations(selected_values)
+    branch_lag_profiles = [
+        {"branch": row["branch"], "branch_name": row["branch_name"], "region": row["region"], "lags": _lag_associations({item["month"]: float(item["quantity"]) for item in by_branch[row["branch"]]})}
+        for row in metrics
+    ]
+    region_influences = _region_influence(by_branch)
+    selected_region_influence = next(row for row in region_influences if row["branch"] == selected_code)
+    selected_sku_influence = _sku_influence([dict(row) for row in selected_sku_month_rows], selected_values)[:30]
+    global_skus: dict[str, dict[str, Any]] = {}
+    total_abs_sku_quantity = 0.0
+    for source in sku_rows:
+        if source["branch"] not in active_codes:
+            continue
+        quantity = float(source["quantity"])
+        total_abs_sku_quantity += abs(quantity)
+        item = global_skus.setdefault(str(source["base_sku"]), {"base_sku": str(source["base_sku"]), "sku_name": source["sku_name"] or "", "net_quantity": 0.0, "absolute_quantity": 0.0, "branches": 0, "top5_branches": 0})
+        item["net_quantity"] += quantity
+        item["absolute_quantity"] += abs(quantity)
+        item["branches"] += 1
+        item["top5_branches"] += int(source["rank"] <= 5)
+    global_sku_influence = sorted(global_skus.values(), key=lambda row: row["absolute_quantity"], reverse=True)[:30]
+    for item in global_sku_influence:
+        item["absolute_quantity_share"] = item["absolute_quantity"] / total_abs_sku_quantity if total_abs_sku_quantity else 0.0
     selected_detail = {**selected, "top_skus": sku_by_branch.get(selected_code, [])}
     table_rows = [{key: value for key, value in row.items() if key not in {"history", "monthly_profile"}} for row in metrics]
     segment_counts = Counter(row["forecastability_segment"] for row in metrics)
@@ -504,13 +621,22 @@ async def get_branch_forecast_overview(
         "clusters": clusters,
         "branch_network": network[:100],
         "selected_branch_links": selected_links,
+        "selected_lag_associations": selected_lags,
+        "branch_lag_profiles": branch_lag_profiles,
+        "branch_region_influences": region_influences,
+        "selected_region_influence": selected_region_influence,
+        "selected_sku_influence": selected_sku_influence,
+        "global_sku_influence": global_sku_influence,
         "methodology": {
             "target": "SUM(quantity) của toàn bộ dòng theo chi nhánh × tháng; không lấy MAX và không chặn quantity âm ở tầng SKU.",
             "seasonal": "Seasonal candidate khi có ít nhất 6 origin lag-12 và Seasonal Naive cải thiện WAPE >=10% so với Naive.",
             "coverage": "LOW_COVERAGE khi dưới 12 tháng quan sát hoặc coverage lịch dưới 80%.",
             "concentration": "Top-1/Top-5 share và HHI đo mức tổng chi nhánh phụ thuộc vào vài SKU.",
             "drivers": "Correlation dùng log1p(quantity), chỉ mô tả liên hệ; GG hiện tại bị đánh dấu unknown-at-origin.",
-            "network": "Đồng biến và lead-lag giữa chi nhánh là tín hiệu thăm dò, không chứng minh chi nhánh này gây demand cho chi nhánh khác.",
+            "lags": "Lag 1/2/3/6/12 là correlation giữa signed-log quantity quá khứ và quantity hiện tại; chỉ dùng lag có đủ origin trong backtest.",
+            "network": "Đồng biến và lead-lag 1–3 tháng giữa chi nhánh là tín hiệu thăm dò, không chứng minh chi nhánh này gây demand cho chi nhánh khác.",
+            "region_influence": "Ảnh hưởng vùng dùng tổng quantity các chi nhánh cùng vùng nhưng loại chính chi nhánh đang đo để tránh tương quan part-whole giả.",
+            "sku_influence": "SKU xếp theo tỷ trọng absolute quantity; correlation cùng tháng dùng phần còn lại của chi nhánh, còn lag 1–3 so SKU quá khứ với tổng chi nhánh hiện tại.",
             "clustering": "K-means 4 cụm với robust scaling/IQR và chặn outlier trên CV, Naive WAPE, trend, seasonal gain, Top-5 share và external sensitivity; tên cụm là đặc trưng tương đối nổi trội để routing model, không phải nhãn nghiệp vụ cố định.",
         },
     }

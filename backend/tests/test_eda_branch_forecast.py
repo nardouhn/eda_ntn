@@ -7,6 +7,9 @@ from app.routes.eda_branch_forecast import (
     _cluster_branches,
     _correlation,
     _feature_associations,
+    _lag_associations,
+    _region_influence,
+    _sku_influence,
     _wape,
 )
 
@@ -84,3 +87,25 @@ def test_cluster_branches_adds_model_routing_fields() -> None:
     clusters = _cluster_branches(rows, k=2)
     assert len(clusters) == 2
     assert all("cluster_id" in row and "cluster_model" in row for row in rows)
+
+
+def test_lag_region_and_sku_influence_helpers() -> None:
+    months = [date(2024, month, 1) for month in range(1, 7)]
+    branch_a = [{"branch": "A", "region": "DNB", "month": month, "quantity": float(index + 1)} for index, month in enumerate(months)]
+    branch_b = [{"branch": "B", "region": "DNB", "month": month, "quantity": float((index + 1) * 2)} for index, month in enumerate(months)]
+    values = {row["month"]: row["quantity"] for row in branch_a}
+
+    lags = _lag_associations(values, (1, 2))
+    assert lags[0]["observations"] == 5
+    assert lags[0]["correlation"] > .9
+
+    region = _region_influence({"A": branch_a, "B": branch_b})
+    assert region[0]["correlations"][0]["correlation"] > .99
+
+    sku_rows = [
+        {"base_sku": "SKU1", "sku_name": "One", "month": month, "quantity": float(index + 1)}
+        for index, month in enumerate(months)
+    ]
+    sku = _sku_influence(sku_rows, values)[0]
+    assert sku["absolute_quantity_share"] == 1.0
+    assert sku["strongest_lag"] in {1, 2, 3}
