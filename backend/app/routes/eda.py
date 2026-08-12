@@ -135,6 +135,8 @@ async def overview(
                 params,
             )
         ).fetchall()
+        
+        # CẬP NHẬT: Sắp xếp theo Sản lượng thay vì Doanh thu
         top_products = await (
             await conn.execute(
                 f"""
@@ -146,17 +148,19 @@ async def overview(
                 FROM {SOURCE_TABLE}
                 WHERE {where}
                 GROUP BY base_sku
-                ORDER BY total_amount DESC, base_sku
+                ORDER BY total_quantity DESC, base_sku
                 LIMIT 10
                 """,
                 params,
             )
         ).fetchall()
+        
+        # CẬP NHẬT: Tỷ trọng dựa trên Sản lượng thay vì Doanh thu
         region_proportion = await (
             await conn.execute(
                 f"""
                 SELECT {REGION_SQL} AS name,
-                       COALESCE(SUM({revenue_sql}), 0)::double precision AS value
+                       GREATEST(COALESCE(SUM(quantity), 0), 0)::double precision AS value
                 FROM {SOURCE_TABLE}
                 WHERE {where}
                 GROUP BY {REGION_SQL}
@@ -165,11 +169,13 @@ async def overview(
                 params,
             )
         ).fetchall()
+        
+        # CẬP NHẬT: Tỷ trọng dựa trên Sản lượng thay vì Doanh thu
         branch_proportion = await (
             await conn.execute(
                 f"""
                 SELECT COALESCE(MAX(NULLIF(BTRIM(branch_name), '')), BTRIM(branch)) AS name,
-                       COALESCE(SUM({revenue_sql}), 0)::double precision AS value
+                       GREATEST(COALESCE(SUM(quantity), 0), 0)::double precision AS value
                 FROM {SOURCE_TABLE}
                 WHERE {where}
                 GROUP BY BTRIM(branch)
@@ -179,11 +185,13 @@ async def overview(
                 params,
             )
         ).fetchall()
+        
+        # CẬP NHẬT: Tỷ trọng dựa trên Sản lượng thay vì Doanh thu
         pattern_proportion = await (
             await conn.execute(
                 f"""
                 SELECT BTRIM(pattern_set) AS name,
-                       COALESCE(SUM({revenue_sql}), 0)::double precision AS value
+                       GREATEST(COALESCE(SUM(quantity), 0), 0)::double precision AS value
                 FROM {SOURCE_TABLE}
                 WHERE {where} AND NULLIF(BTRIM(pattern_set), '') IS NOT NULL
                 GROUP BY BTRIM(pattern_set)
@@ -377,7 +385,6 @@ async def timeline_sample(branch_code: str | None = None) -> list[dict]:
       ON s.base_sku = m.base_sku AND s.branch_code = m.branch_code
     ORDER BY s.demand_pattern, s.base_sku, s.branch_code, m.month
     """
-    # (Phần thực thi và format dict bên dưới giữ nguyên như code cũ của bạn)
     async with get_pool().connection() as conn:
         rows = await (await conn.execute(query, params)).fetchall()
         
@@ -401,7 +408,6 @@ async def timeline_sample(branch_code: str | None = None) -> list[dict]:
 
 @router.get("/branch-coverage")
 async def branch_coverage() -> list[dict]:
-    # Lọc bỏ các tháng trước khi SKU ra mắt bằng cách tìm first_sale_month
     query = """
     WITH sku_first_sale AS (
       SELECT 
@@ -414,7 +420,6 @@ async def branch_coverage() -> list[dict]:
     SELECT
       m.month,
       m.branch_code,
-      -- Chỉ đếm các SKU ĐÃ TỒN TẠI (tháng hiện tại >= tháng ra mắt)
       COUNT(m.base_sku) as total_skus,
       SUM(CASE WHEN m.gross_positive_qty > 0 THEN 1 ELSE 0 END) as active_skus,
       ROUND((SUM(CASE WHEN m.gross_positive_qty > 0 THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(m.base_sku), 0)::numeric) * 100, 2) as coverage_pct
