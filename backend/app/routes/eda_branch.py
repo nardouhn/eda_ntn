@@ -20,7 +20,7 @@ async def get_branch_overview(
     status: str = Query("all", pattern="^(all|active|inactive)$", description="Trạng thái chi nhánh"),
 ) -> dict:
     """
-    Phân tích Hiệu suất & Độ phủ Chi nhánh theo trạng thái được chọn.
+    Phân tích Hiệu suất & Độ phủ Chi nhánh theo Sản lượng (M²).
     """
     filters = []
     params: list[object] = []
@@ -66,7 +66,7 @@ async def get_branch_overview(
                 )
             ).fetchone()
             
-            # 2. PHÂN TÍCH VÙNG MIỀN: Doanh thu, Sản lượng và Giá trung bình / M2
+            # 2. PHÂN TÍCH VÙNG MIỀN: Sắp xếp theo Sản lượng (total_quantity)
             region_analysis = await (
                 await conn.execute(
                     f"""
@@ -80,7 +80,7 @@ async def get_branch_overview(
                     FROM source.mart_sku_branch_month m
                     WHERE 1=1 {filter_clause}
                     GROUP BY 1
-                    ORDER BY total_amount DESC
+                    ORDER BY total_quantity DESC
                     """,
                     params
                 )
@@ -94,7 +94,7 @@ async def get_branch_overview(
                         m.branch,
                         MAX(m.branch_name) as branch_name,
                         COUNT(DISTINCT m.base_sku) as sku_count,
-                        COALESCE(SUM(m.total_amount), 0)::float as total_amount
+                        COALESCE(SUM(m.quantity), 0)::float as total_quantity
                     FROM source.mart_sku_branch_month m
                     WHERE 1=1 {filter_clause}
                     GROUP BY m.branch
@@ -105,7 +105,7 @@ async def get_branch_overview(
                 )
             ).fetchall()
             
-            # 4. DANH SÁCH CHI TIẾT 58 CHI NHÁNH + PHÂN NHÓM PARETO
+            # 4. PARETO THEO SẢN LƯỢNG (Khối lượng M² gánh team)
             branch_performance = await (
                 await conn.execute(
                     f"""
@@ -124,25 +124,28 @@ async def get_branch_overview(
                         GROUP BY m.branch
                     ),
                     totals AS (
-                        SELECT SUM(total_amount) as grand_total FROM branch_agg
+                        -- Cập nhật tổng theo Quantity thay vì Amount
+                        SELECT SUM(total_quantity) as grand_total FROM branch_agg
                     ),
                     cum_calc AS (
                         SELECT 
                             b.*,
-                            ROUND((b.total_amount / NULLIF(b.sku_count, 0))::numeric, 0)::float as revenue_per_sku,
-                            SUM(b.total_amount) OVER (ORDER BY b.total_amount DESC) / NULLIF(t.grand_total, 0) as cum_ratio
+                            -- Tính Khối lượng M² / SKU thay vì Doanh thu / SKU
+                            ROUND((b.total_quantity / NULLIF(b.sku_count, 0))::numeric, 2)::float as volume_per_sku,
+                            -- Tỷ trọng tích lũy theo Quantity
+                            SUM(b.total_quantity) OVER (ORDER BY b.total_quantity DESC) / NULLIF(t.grand_total, 0) as cum_ratio
                         FROM branch_agg b CROSS JOIN totals t
                     )
                     SELECT 
                         branch, branch_name, region, status, sku_count, total_quantity, total_amount,
-                        active_months, revenue_per_sku,
+                        active_months, volume_per_sku,
                         CASE 
-                            WHEN cum_ratio <= 0.80 THEN 'Nhóm A (Gánh tem)'
+                            WHEN cum_ratio <= 0.80 THEN 'Nhóm A (Khối lượng lớn)'
                             WHEN cum_ratio <= 0.95 THEN 'Nhóm B (Khá)'
-                            ELSE 'Nhóm C (Cần thúc đẩy)'
+                            ELSE 'Nhóm C (Thấp)'
                         END as pareto_group
                     FROM cum_calc
-                    ORDER BY total_amount DESC
+                    ORDER BY total_quantity DESC
                     """,
                     params
                 )
@@ -224,7 +227,8 @@ async def get_branch_detail(
                     FROM source.mart_sku_branch_month m
                     WHERE 1=1 {filter_clause}
                     GROUP BY m.base_sku
-                    ORDER BY total_amount DESC
+                    -- Sắp xếp theo Sản lượng thay vì Doanh thu
+                    ORDER BY quantity DESC
                     LIMIT 20
                     """,
                     params

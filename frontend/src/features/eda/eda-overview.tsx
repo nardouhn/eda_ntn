@@ -302,7 +302,7 @@ export function EdaOverview() {
         <div>
           <h2>Tổng quan EDA</h2>
           <p className="subtitle">
-            Phân tích Phân bổ Doanh thu: Vùng miền, Chi nhánh và Bộ mẫu
+            Phân tích Phân bổ theo Sản lượng: Vùng miền, Chi nhánh và Bộ mẫu
           </p>
         </div>
       </div>
@@ -340,7 +340,7 @@ export function EdaOverview() {
               color: "#ecf7ff",
               border: "1px solid #233a4c",
               borderRadius: "6px",
-              padding: "6px 28px 6px 10px", // Tăng padding-right để chừa chỗ cho nút X
+              padding: "6px 28px 6px 10px",
               fontSize: "13px",
               outline: "none",
             }}
@@ -542,7 +542,7 @@ export function EdaOverview() {
         </article>
       </div>
 
-      {/* TỶ LỆ BÁN - CƠ CẤU DOANH THU */}
+      {/* TỶ LỆ BÁN - CƠ CẤU SẢN LƯỢNG */}
       <div
         style={{
           display: "grid",
@@ -556,7 +556,7 @@ export function EdaOverview() {
           <div className="panel-title">
             <div>
               <p className="eyebrow">TỶ LỆ BÁN</p>
-              <h3>Theo Vùng Miền</h3>
+              <h3>Sản lượng theo Vùng</h3>
             </div>
           </div>
           {loading ? (
@@ -591,8 +591,8 @@ export function EdaOverview() {
                   </Pie>
                   <RechartsTooltip
                     formatter={(value: any) => [
-                      formatCurrencyLocal(Number(value)),
-                      "Doanh thu",
+                      formatNumber(Number(value)),
+                      "Sản lượng (M²)",
                     ]}
                     contentStyle={{
                       backgroundColor: "#0b1927",
@@ -617,7 +617,7 @@ export function EdaOverview() {
           <div className="panel-title">
             <div>
               <p className="eyebrow">TỶ LỆ BÁN</p>
-              <h3>Top Chi Nhánh</h3>
+              <h3>Top 10 Chi Nhánh (M²)</h3>
             </div>
           </div>
           {loading ? (
@@ -649,8 +649,8 @@ export function EdaOverview() {
                   />
                   <RechartsTooltip
                     formatter={(value: any) => [
-                      formatCurrencyLocal(Number(value)),
-                      "Doanh thu",
+                      formatNumber(Number(value)),
+                      "Sản lượng (M²)",
                     ]}
                     contentStyle={{
                       backgroundColor: "#0b1927",
@@ -681,7 +681,7 @@ export function EdaOverview() {
           <div className="panel-title">
             <div>
               <p className="eyebrow">TỶ LỆ BÁN</p>
-              <h3>Theo Bộ Mẫu</h3>
+              <h3>Sản lượng theo Bộ Mẫu</h3>
             </div>
           </div>
           {loading ? (
@@ -716,8 +716,8 @@ export function EdaOverview() {
                   </Pie>
                   <RechartsTooltip
                     formatter={(value: any) => [
-                      formatCurrencyLocal(Number(value)),
-                      "Doanh thu",
+                      formatNumber(Number(value)),
+                      "Sản lượng (M²)",
                     ]}
                     contentStyle={{
                       backgroundColor: "#0b1927",
@@ -856,7 +856,7 @@ export function EdaOverview() {
         <div className="panel-title">
           <div>
             <p className="eyebrow">TOP</p>
-            <h3>Top sản phẩm</h3>
+            <h3>Top sản phẩm (theo Sản lượng)</h3>
           </div>
         </div>
         {loading ? (
@@ -896,7 +896,10 @@ export function EdaOverview() {
                     <td style={{ fontSize: "12px" }}>
                       {product.size_code || "N/A"}
                     </td>
-                    <td className="number-cell" style={{ fontSize: "12px" }}>
+                    <td
+                      className="number-cell"
+                      style={{ fontSize: "12px", fontWeight: "bold" }}
+                    >
                       {formatNumber(product.total_quantity)}
                     </td>
                     <td className="number-cell" style={{ fontSize: "12px" }}>

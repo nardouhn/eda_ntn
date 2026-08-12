@@ -18,9 +18,9 @@ import { formatNumber, formatMonth } from "@/lib/format";
 import { ExternalFeatureInsights } from "./external-feature-insights";
 
 const PARETO_COLORS: Record<string, string> = {
-  "Nhóm A (Gánh tem)": "#10b981", // Xanh lá
+  "Nhóm A (Khối lượng lớn)": "#10b981", // Xanh lá
   "Nhóm B (Khá)": "#23afff", // Xanh dương
-  "Nhóm C (Cần thúc đẩy)": "#ef4444", // Đỏ
+  "Nhóm C (Thấp)": "#ef4444", // Đỏ
 };
 
 interface BranchOverview {
@@ -43,7 +43,7 @@ interface SkuCoverage {
   branch: string;
   branch_name: string;
   sku_count: number;
-  total_amount: number;
+  total_quantity: number;
 }
 
 interface BranchPerformance {
@@ -54,7 +54,7 @@ interface BranchPerformance {
   total_quantity: number;
   total_amount: number;
   active_months: number;
-  revenue_per_sku: number;
+  volume_per_sku: number;
   pareto_group: string;
   status: string;
 }
@@ -73,12 +73,20 @@ interface BranchDetail {
     sku_count?: number;
     total_quantity?: number;
     total_amount?: number;
+    status?: string;
   };
   trend?: {
     month: string;
     quantity: number;
     total_amount: number;
     sku_count: number;
+  }[];
+  top_skus?: {
+    base_sku: string;
+    sku_name: string;
+    size_code: string;
+    quantity: number;
+    total_amount: number;
   }[];
 }
 
@@ -118,7 +126,10 @@ export function EdaBranch() {
 
   const fetchBranchDetail = async (branch: string) => {
     try {
-      const response = await apiGet<BranchDetail>(`/eda/branch/detail/${branch}`, { status });
+      const response = await apiGet<BranchDetail>(
+        `/eda/branch/detail/${branch}`,
+        { status }
+      );
       setBranchDetail(response);
       setSelectedBranch(branch);
     } catch (err) {
@@ -153,8 +164,7 @@ export function EdaBranch() {
         <div>
           <h2>Phân tích Mạng lưới Chi nhánh</h2>
           <p className="subtitle">
-            Báo cáo Hiệu suất Kinh doanh, Giá bán trung bình M² và Phân nhóm
-            Pareto (ABC)
+            Báo cáo Hiệu suất Sản lượng, Phủ hàng và Phân nhóm Pareto (ABC)
           </p>
         </div>
         <div className="result-count">
@@ -165,7 +175,14 @@ export function EdaBranch() {
       </div>
 
       {/* Search */}
-      <div style={{ marginBottom: "16px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+      <div
+        style={{
+          marginBottom: "16px",
+          display: "flex",
+          gap: "10px",
+          flexWrap: "wrap",
+        }}
+      >
         <input
           type="text"
           placeholder="🔍 Tìm chi nhánh theo tên hoặc mã..."
@@ -247,12 +264,12 @@ export function EdaBranch() {
           marginBottom: "12px",
         }}
       >
-        {/* 1. Phân tích Vùng miền: So sánh Doanh thu vs Giá bán trung bình / M2 */}
+        {/* 1. Phân tích Vùng miền: So sánh Sản lượng vs Giá bán trung bình / M2 */}
         <div className="panel">
           <div className="panel-title">
             <div>
               <p className="eyebrow">HIỆU SUẤT VÙNG</p>
-              <h3>Doanh thu & Giá bán TB/M² theo Vùng</h3>
+              <h3>Sản lượng (M²) & Giá bán TB/M² theo Vùng</h3>
             </div>
           </div>
           {loading ? (
@@ -275,13 +292,17 @@ export function EdaBranch() {
                   <YAxis
                     yAxisId="left"
                     stroke="#16d8c2"
-                    tickFormatter={(value: number) => `${(value / 1e9).toFixed(0)}B`}
+                    tickFormatter={(value: number) =>
+                      `${(value / 1e3).toFixed(0)}k`
+                    }
                   />
                   <YAxis
                     yAxisId="right"
                     orientation="right"
                     stroke="#ffc14d"
-                    tickFormatter={(value: number) => `${(value / 1e3).toFixed(0)}k`}
+                    tickFormatter={(value: number) =>
+                      `${(value / 1e3).toFixed(0)}k`
+                    }
                   />
                   <RechartsTooltip
                     contentStyle={{
@@ -289,20 +310,25 @@ export function EdaBranch() {
                       border: "1px solid #233a4c",
                     }}
                     formatter={(value: unknown, name: unknown) => {
-                      if (name === "Doanh thu")
-                        return [formatCurrency(Number(value)), String(name)];
+                      if (name === "Sản lượng (M²)")
+                        return [formatNumber(Number(value)), String(name)];
                       if (name === "Giá TB / M²")
-                        return [`${Number(value).toLocaleString()} ₫/m²`, String(name)];
+                        return [
+                          `${Number(value).toLocaleString()} ₫/m²`,
+                          String(name),
+                        ];
                       return [String(value), String(name)];
                     }}
-                    labelFormatter={(label: unknown) => `Vùng: ${String(label)}`}
+                    labelFormatter={(label: unknown) =>
+                      `Vùng: ${String(label)}`
+                    }
                   />
                   <Legend />
                   <Bar
                     yAxisId="left"
-                    dataKey="total_amount"
+                    dataKey="total_quantity"
                     fill="#16d8c288"
-                    name="Doanh thu"
+                    name="Sản lượng (M²)"
                     barSize={30}
                   />
                   <Line
@@ -361,9 +387,11 @@ export function EdaBranch() {
                     }}
                     formatter={(value: unknown) => [
                       `${String(value)} mã SKU`,
-                      "Số SKU ghi nhận",
+                      "Số mẫu đang bán",
                     ]}
-                    labelFormatter={(label: unknown) => `Chi nhánh: ${String(label)}`}
+                    labelFormatter={(label: unknown) =>
+                      `Chi nhánh: ${String(label)}`
+                    }
                   />
                   <Bar
                     dataKey="sku_count"
@@ -380,12 +408,12 @@ export function EdaBranch() {
         </div>
       </div>
 
-      {/* BẢNG HIỆU SUẤT TOÀN BỘ 58 CHI NHÁNH + PHÂN NHÓM PARETO (ABC) */}
+      {/* BẢNG HIỆU SUẤT TOÀN BỘ CHI NHÁNH + PHÂN NHÓM PARETO (ABC) THEO SẢN LƯỢNG */}
       <div className="panel">
         <div className="panel-title">
           <div>
             <p className="eyebrow">ĐÁNH GIÁ PHÂN NHÓM PARETO (ABC)</p>
-            <h3>Hiệu suất & Doanh thu / SKU của Chi nhánh</h3>
+            <h3>Trọng tải Kho & Phân lớp Chi nhánh theo Sản lượng</h3>
           </div>
           <div className="result-count">
             {branch_performance?.length || 0} Chi nhánh
@@ -406,7 +434,9 @@ export function EdaBranch() {
                   <th style={{ fontSize: "11px" }}>Mã</th>
                   <th style={{ fontSize: "11px" }}>Tên chi nhánh</th>
                   <th style={{ fontSize: "11px" }}>Vùng</th>
-                  <th style={{ fontSize: "11px", textAlign: "center" }}>Trạng thái</th>
+                  <th style={{ fontSize: "11px", textAlign: "center" }}>
+                    Trạng thái
+                  </th>
                   <th style={{ fontSize: "11px", textAlign: "right" }}>
                     Mẫu SKU
                   </th>
@@ -417,7 +447,7 @@ export function EdaBranch() {
                     Doanh thu
                   </th>
                   <th style={{ fontSize: "11px", textAlign: "right" }}>
-                    Doanh thu / SKU
+                    Sản lượng / SKU
                   </th>
                   <th style={{ fontSize: "11px", textAlign: "center" }}>
                     Phân nhóm Pareto
@@ -441,27 +471,31 @@ export function EdaBranch() {
                       {b.region}
                     </td>
                     <td style={{ fontSize: "11px", textAlign: "center" }}>
-                      <span className={`status ${b.status === "Hoạt động" ? "active" : "inactive"}`}>
+                      <span
+                        className={`status ${
+                          b.status === "Hoạt động" ? "active" : "inactive"
+                        }`}
+                      >
                         {b.status}
                       </span>
                     </td>
                     <td className="number-cell" style={{ fontSize: "11px" }}>
                       {b.sku_count}
                     </td>
-                    <td className="number-cell" style={{ fontSize: "11px" }}>
-                      {formatNumber(b.total_quantity)}
-                    </td>
                     <td
                       className="number-cell"
                       style={{ fontSize: "11px", fontWeight: "bold" }}
                     >
+                      {formatNumber(b.total_quantity)}
+                    </td>
+                    <td className="number-cell" style={{ fontSize: "11px" }}>
                       {formatCurrency(b.total_amount)}
                     </td>
                     <td
                       className="number-cell"
                       style={{ fontSize: "11px", color: "#23afff" }}
                     >
-                      {formatCurrency(b.revenue_per_sku)}
+                      {formatNumber(b.volume_per_sku)} M²
                     </td>
                     <td style={{ fontSize: "11px", textAlign: "center" }}>
                       <span
@@ -470,10 +504,12 @@ export function EdaBranch() {
                           borderRadius: "12px",
                           fontSize: "10px",
                           fontWeight: "bold",
-                          backgroundColor: `${PARETO_COLORS[b.pareto_group]}22`,
-                          color: PARETO_COLORS[b.pareto_group],
+                          backgroundColor: `${
+                            PARETO_COLORS[b.pareto_group] || "#94a3b8"
+                          }22`,
+                          color: PARETO_COLORS[b.pareto_group] || "#94a3b8",
                           border: `1px solid ${
-                            PARETO_COLORS[b.pareto_group]
+                            PARETO_COLORS[b.pareto_group] || "#94a3b8"
                           }44`,
                         }}
                       >
@@ -535,55 +571,117 @@ export function EdaBranch() {
             </article>
           </div>
 
-          {/* Trend Chart */}
-          {branchDetail.trend && branchDetail.trend.length > 0 && (
-            <div style={{ height: "200px", marginTop: "12px" }}>
-              <h4>Xu hướng doanh thu theo tháng</h4>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={branchDetail.trend}>
-                  <CartesianGrid stroke="#1d3547" strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="month"
-                    tickFormatter={(value: unknown) => formatMonth(String(value))}
-                    stroke="#7f9aaf"
-                  />
-                  <YAxis yAxisId="left" stroke="#16d8c2" />
-                  <YAxis yAxisId="right" orientation="right" stroke="#23afff" />
-                  <RechartsTooltip
-                    labelFormatter={(value: unknown) => formatMonth(String(value))}
-                    contentStyle={{
-                      backgroundColor: "#0b1927",
-                      border: "1px solid #233a4c",
-                    }}
-                    formatter={(value: unknown, name: unknown) => {
-                      if (name === "Sản lượng")
-                        return [formatNumber(Number(value)), String(name)];
-                      if (name === "Doanh thu")
-                        return [formatCurrency(Number(value)), String(name)];
-                      return [String(value), String(name)];
-                    }}
-                  />
-                  <Legend />
-                  <Bar
-                    yAxisId="left"
-                    dataKey="quantity"
-                    fill="#16d8c288"
-                    name="Sản lượng"
-                    barSize={20}
-                  />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="total_amount"
-                    stroke="#23afff"
-                    name="Doanh thu"
-                    strokeWidth={2}
-                    dot={{ fill: "#23afff" }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.2fr 1fr",
+              gap: "12px",
+              marginTop: "12px",
+            }}
+          >
+            {/* Trend Chart */}
+            {branchDetail.trend && branchDetail.trend.length > 0 && (
+              <div style={{ height: "250px" }}>
+                <h4>Xu hướng Sản lượng & Doanh thu</h4>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={branchDetail.trend}>
+                    <CartesianGrid stroke="#1d3547" strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="month"
+                      tickFormatter={(value: unknown) =>
+                        formatMonth(String(value))
+                      }
+                      stroke="#7f9aaf"
+                    />
+                    <YAxis yAxisId="left" stroke="#16d8c2" />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      stroke="#23afff"
+                    />
+                    <RechartsTooltip
+                      labelFormatter={(value: unknown) =>
+                        formatMonth(String(value))
+                      }
+                      contentStyle={{
+                        backgroundColor: "#0b1927",
+                        border: "1px solid #233a4c",
+                      }}
+                      formatter={(value: unknown, name: unknown) => {
+                        if (name === "Sản lượng")
+                          return [formatNumber(Number(value)), String(name)];
+                        if (name === "Doanh thu")
+                          return [formatCurrency(Number(value)), String(name)];
+                        return [String(value), String(name)];
+                      }}
+                    />
+                    <Legend />
+                    <Bar
+                      yAxisId="left"
+                      dataKey="quantity"
+                      fill="#16d8c288"
+                      name="Sản lượng"
+                      barSize={20}
+                    />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="total_amount"
+                      stroke="#23afff"
+                      name="Doanh thu"
+                      strokeWidth={2}
+                      dot={{ fill: "#23afff" }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Top SKUs in Branch */}
+            {branchDetail.top_skus && branchDetail.top_skus.length > 0 && (
+              <div>
+                <h4>Top SKU kéo Sản lượng M²</h4>
+                <div className="table-scroll" style={{ maxHeight: "250px" }}>
+                  <table className="data-table" style={{ minWidth: "100%" }}>
+                    <thead>
+                      <tr>
+                        <th style={{ fontSize: "11px" }}>Mã SKU</th>
+                        <th style={{ fontSize: "11px", textAlign: "right" }}>
+                          Sản lượng
+                        </th>
+                        <th style={{ fontSize: "11px", textAlign: "right" }}>
+                          Doanh thu
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {branchDetail.top_skus.map((sku) => (
+                        <tr key={sku.base_sku}>
+                          <td style={{ fontSize: "11px" }}>
+                            <strong style={{ color: "#16d8c2" }}>
+                              {sku.base_sku}
+                            </strong>
+                          </td>
+                          <td
+                            className="number-cell"
+                            style={{ fontSize: "11px", fontWeight: "bold" }}
+                          >
+                            {formatNumber(sku.quantity)}
+                          </td>
+                          <td
+                            className="number-cell"
+                            style={{ fontSize: "11px", color: "#7f9aaf" }}
+                          >
+                            {formatCurrency(sku.total_amount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
       <ExternalFeatureInsights level="branch" />
