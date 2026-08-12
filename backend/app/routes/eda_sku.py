@@ -166,7 +166,7 @@ async def get_sku_overview(
                     ELSE false
                 END AS is_check_pattern
             FROM classified
-            ORDER BY total_amount DESC
+            ORDER BY total_quantity DESC
             """
             raw_data = await (await conn.execute(query, params)).fetchall()
             
