@@ -1,0 +1,14 @@
+﻿pair,feature_a,feature_b,paired_rows,pearson,recommendation
+lag1__rolling3,lag1,rolling3_observed,100287,0.83677520457342,review_redundancy
+lag1__revenue_lag1,lag1,revenue_lag1,100287,0.784097408945178,review_redundancy
+lag1__line_count_lag1,lag1,line_count_lag1,100287,0.555752085943384,keep_if_backtest_helps
+trend__gg_lag1,trend,gg_trends_lag1,120,0.512493435230404,keep_if_backtest_helps
+lag2__lag3,lag2,lag3,46977,0.468759900484193,keep_if_backtest_helps
+lag1__lag2,lag1,lag2,66584,0.466992858184797,keep_if_backtest_helps
+trend__gg,trend,gg_trends_index,120,0.444532775250252,keep_if_backtest_helps
+gieng__rain,thang_gieng_share,rain_flag,120,-0.411926270430066,keep_if_backtest_helps
+tet__rain,tet_share,rain_flag,120,-0.40988569249405,keep_if_backtest_helps
+gg__gg_lag1,gg_trends_index,gg_trends_lag1,120,0.376819955414083,keep_if_backtest_helps
+co_hon__rain,co_hon_share,rain_flag,120,0.328797200905311,keep_if_backtest_helps
+thanh_minh__rain,thanh_minh_share,rain_flag,120,-0.322232227524852,keep_if_backtest_helps
+tet__gieng,tet_share,thang_gieng_share,120,0.146759729783156,keep_if_backtest_helps

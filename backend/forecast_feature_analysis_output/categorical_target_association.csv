@@ -1,0 +1,10 @@
+﻿feature,availability,categories,paired_rows,min_group_rows,max_group_rows,eta_squared_in_sample
+base_sku,forecast_safe,2331,100287,1,486,0.275891999852565
+sku_name,display_only,2229,100287,1,486,0.271470969351472
+factory_sku,redundant_with_base_sku,2147,100287,1,486,0.270204070752796
+pattern_set,forecast_safe,1456,100287,1,850,0.236898184506344
+branch,forecast_safe,61,100287,5,4320,0.220310373450376
+region,forecast_safe,4,100287,3448,39891,0.119432954660353
+price_group,forecast_safe,17,100287,25,39415,0.0335638522833792
+demand_pattern,leakage_unless_recomputed_at_origin,6,100287,3691,35687,0.00835783880106841
+series_scope,leakage_unless_recomputed_at_origin,2,100287,24446,75841,0.00309689473682886

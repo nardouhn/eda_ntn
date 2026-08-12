@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import close_pool, get_pool, open_pool
-from app.routes import eda, eda_sku, eda_branch, eda_branch_sku, eda_external_features, eda_forecast_segments, eda_region, eda_pattern_set, forecast, items, meta
+from app.routes import eda, eda_sku, eda_branch, eda_branch_forecast, eda_branch_sku, eda_external_features, eda_forecast_segments, eda_region, eda_pattern_set, forecast, items, meta
 
 
 @asynccontextmanager
@@ -39,6 +39,7 @@ app.include_router(items.router, prefix="/api/v1")
 app.include_router(eda.router, prefix="/api/v1")
 app.include_router(eda_sku.router, prefix="/api/v1")
 app.include_router(eda_branch.router, prefix="/api/v1")
+app.include_router(eda_branch_forecast.router, prefix="/api/v1")
 app.include_router(eda_branch_sku.router, prefix="/api/v1")
 app.include_router(eda_external_features.router, prefix="/api/v1")
 app.include_router(eda_forecast_segments.router, prefix="/api/v1")

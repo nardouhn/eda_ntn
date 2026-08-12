@@ -8,6 +8,7 @@ import { EdaBranchSku } from "./eda-branch-sku";
 import { EdaRegion } from "./eda-region";
 import { EdaPatternSet } from "./eda-pattern-set";
 import { EdaForecastSegments } from "./eda-forecast-segments";
+import { EdaBranchForecast } from "./eda-branch-forecast";
 
 export function EdaModule() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -17,6 +18,7 @@ export function EdaModule() {
     { id: "overview", label: "Tổng quan" },
     { id: "sku", label: "SKU" },
     { id: "branch", label: "Chi nhánh" },
+    { id: "branch_forecast", label: "Forecast Chi nhánh" },
     { id: "branch_sku", label: "SKU × Chi nhánh" },
     { id: "region", label: "Vùng" },
     { id: "pattern_set", label: "Bộ mẫu" },
@@ -63,6 +65,7 @@ export function EdaModule() {
             ? <EdaRegion initialDrillRegion={regionDrilldown} onDrillBack={() => { setRegionDrilldown(null); setActiveTab('region'); }} />
             : <EdaBranch />)}
           {activeTab === 'branch_sku' && <EdaBranchSku branchCode="__ALL__" />}
+          {activeTab === 'branch_forecast' && <EdaBranchForecast />}
           {activeTab === 'region' && <EdaRegion onRegionDrillDown={(region) => { setRegionDrilldown(region); setActiveTab('branch'); }} />}
           {activeTab === 'pattern_set' && <EdaPatternSet />}
           {activeTab === 'forecast_segments' && <EdaForecastSegments />}

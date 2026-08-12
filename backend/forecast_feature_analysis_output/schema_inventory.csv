@@ -1,0 +1,83 @@
+﻿table_schema,table_name,ordinal_position,column_name,data_type,is_nullable
+analytics,dim_month_region_features,1,thang,date,NO
+analytics,dim_month_region_features,2,vung,text,NO
+analytics,dim_month_region_features,3,trend_index,integer,NO
+analytics,dim_month_region_features,4,gg_trends_index,numeric,NO
+analytics,dim_month_region_features,5,gg_trends_lag1,numeric,NO
+analytics,dim_month_region_features,6,flag_mua_mua,smallint,NO
+analytics,dim_month_region_features,7,ty_trong_chay_tet,numeric,NO
+analytics,dim_month_region_features,8,ty_trong_thang_gieng,numeric,NO
+analytics,dim_month_region_features,9,ty_trong_thang_co_hon,numeric,NO
+analytics,dim_month_region_features,10,ty_trong_thanh_minh,numeric,NO
+analytics,dim_month_region_features,11,feature_refreshed_at,timestamp with time zone,NO
+analytics,mart_demand_pattern_episode,1,base_sku,text,NO
+analytics,mart_demand_pattern_episode,2,branch,text,NO
+analytics,mart_demand_pattern_episode,3,episode_id,integer,NO
+analytics,mart_demand_pattern_episode,4,region,text,NO
+analytics,mart_demand_pattern_episode,5,branch_name,text,YES
+analytics,mart_demand_pattern_episode,6,sku_name,text,YES
+analytics,mart_demand_pattern_episode,7,status,text,NO
+analytics,mart_demand_pattern_episode,8,series_scope,text,NO
+analytics,mart_demand_pattern_episode,9,episode_start_month,date,NO
+analytics,mart_demand_pattern_episode,10,episode_end_month,date,NO
+analytics,mart_demand_pattern_episode,11,last_positive_month,date,YES
+analytics,mart_demand_pattern_episode,12,source_end_month,date,NO
+analytics,mart_demand_pattern_episode,13,history_months,integer,NO
+analytics,mart_demand_pattern_episode,14,positive_months,integer,NO
+analytics,mart_demand_pattern_episode,15,zero_months,integer,NO
+analytics,mart_demand_pattern_episode,16,negative_net_months,integer,NO
+analytics,mart_demand_pattern_episode,17,net_quantity_sum,double precision,NO
+analytics,mart_demand_pattern_episode,18,gross_quantity,double precision,NO
+analytics,mart_demand_pattern_episode,19,adi,double precision,YES
+analytics,mart_demand_pattern_episode,20,cv2,double precision,YES
+analytics,mart_demand_pattern_episode,21,demand_pattern,text,NO
+analytics,mart_demand_pattern_episode,22,series_weight,double precision,NO
+analytics,mart_demand_pattern_episode,23,is_latest_episode,boolean,NO
+analytics,mart_demand_pattern_episode,24,is_excluded,boolean,NO
+analytics,mart_demand_pattern_episode,25,exclusion_reason,text,NO
+analytics,mart_demand_pattern_episode,26,threshold_adi,double precision,NO
+analytics,mart_demand_pattern_episode,27,threshold_cv2,double precision,NO
+analytics,mart_demand_pattern_episode,28,calculated_at,timestamp with time zone,NO
+analytics,mart_sku_brand_month_enriched,1,bravo_sku,text,YES
+analytics,mart_sku_brand_month_enriched,2,base_sku,text,YES
+analytics,mart_sku_brand_month_enriched,3,sku_status,text,YES
+analytics,mart_sku_brand_month_enriched,4,price_group,text,YES
+analytics,mart_sku_brand_month_enriched,5,factory_sku,text,YES
+analytics,mart_sku_brand_month_enriched,6,branch,text,YES
+analytics,mart_sku_brand_month_enriched,7,branch_name,text,YES
+analytics,mart_sku_brand_month_enriched,8,region,text,YES
+analytics,mart_sku_brand_month_enriched,9,branch_status,text,YES
+analytics,mart_sku_brand_month_enriched,10,month,date,YES
+analytics,mart_sku_brand_month_enriched,11,unit,text,YES
+analytics,mart_sku_brand_month_enriched,12,quantity,numeric,YES
+analytics,mart_sku_brand_month_enriched,13,total_amount,numeric,YES
+analytics,mart_sku_brand_month_enriched,14,line_count,integer,YES
+analytics,mart_sku_brand_month_enriched,15,sku_name,text,YES
+analytics,mart_sku_brand_month_enriched,16,pattern_set,text,YES
+analytics,mart_sku_brand_month_enriched,17,thang,date,YES
+analytics,mart_sku_brand_month_enriched,18,vung,text,YES
+analytics,mart_sku_brand_month_enriched,19,trend_index,integer,YES
+analytics,mart_sku_brand_month_enriched,20,gg_trends_index,numeric,YES
+analytics,mart_sku_brand_month_enriched,21,gg_trends_lag1,numeric,YES
+analytics,mart_sku_brand_month_enriched,22,flag_mua_mua,smallint,YES
+analytics,mart_sku_brand_month_enriched,23,ty_trong_chay_tet,numeric,YES
+analytics,mart_sku_brand_month_enriched,24,ty_trong_thang_gieng,numeric,YES
+analytics,mart_sku_brand_month_enriched,25,ty_trong_thang_co_hon,numeric,YES
+analytics,mart_sku_brand_month_enriched,26,ty_trong_thanh_minh,numeric,YES
+analytics,mart_sku_brand_month_enriched,27,feature_refreshed_at,timestamp with time zone,YES
+source,mart_sku_branch_month,1,bravo_sku,text,YES
+source,mart_sku_branch_month,2,base_sku,text,YES
+source,mart_sku_branch_month,3,sku_status,text,YES
+source,mart_sku_branch_month,4,price_group,text,YES
+source,mart_sku_branch_month,5,factory_sku,text,YES
+source,mart_sku_branch_month,6,branch,text,YES
+source,mart_sku_branch_month,7,branch_name,text,YES
+source,mart_sku_branch_month,8,region,text,YES
+source,mart_sku_branch_month,9,branch_status,text,YES
+source,mart_sku_branch_month,10,month,date,YES
+source,mart_sku_branch_month,11,unit,text,YES
+source,mart_sku_branch_month,12,quantity,numeric,YES
+source,mart_sku_branch_month,13,total_amount,numeric,YES
+source,mart_sku_branch_month,14,line_count,integer,YES
+source,mart_sku_branch_month,15,sku_name,text,YES
+source,mart_sku_branch_month,16,pattern_set,text,YES

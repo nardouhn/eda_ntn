@@ -1,0 +1,30 @@
+﻿feature,feature_type,decision,reason
+base_sku,categorical,core,ID sản phẩm cho global model
+branch,categorical,core,ID chi nhánh cho global model
+normalized_region,categorical,core,"Cấp cha, cold-start và interaction mùa mưa"
+pattern_set,categorical,core,Chia sẻ tín hiệu cho SKU thưa/mới
+price_group,categorical,candidate,Tín hiệu in-sample thấp; giữ nếu ablation cải thiện
+lag1,numeric,core,Tín hiệu recency chính
+lag2,numeric,core,Giữ kèm availability flag
+lag3,numeric,core,Giữ kèm availability flag
+rolling3_observed,numeric,core,Tín hiệu log-scale mạnh nhất trong audit
+lag6,numeric,candidate,Coverage thấp; kiểm chứng bằng ablation
+lag12,numeric,candidate,Coverage rất thấp; raw corr bị scale chi phối
+line_count_lag1,numeric,candidate,Có tín hiệu nhưng tương quan với demand lag1
+revenue_lag1,numeric,candidate,Khá trùng demand lag1; cân nhắc dùng avg_price thay thế
+target_month_sin_cos,calendar,core,"Biểu diễn chu kỳ, biết trước tại origin"
+rain_target,calendar,candidate,Tác động có thể phi tuyến theo region
+tet_gieng_co_hon_thanh_minh,calendar,candidate,Giữ theo nhóm và kiểm tra ablation
+gg_trends_lag1,external,candidate,Tín hiệu tổng thể yếu; chỉ giữ nếu backtest thắng
+gg_trends_target,external,leakage,Không biết tại forecast origin
+adi_cv2_pattern,series_metadata,candidate,Phải tính lại as-of-origin
+current_status,business_status,gating,Suppress hiện tại; không gắn ngược vào lịch sử
+factory_sku,categorical,drop,Ánh xạ 1-1 với base_sku trong dữ liệu hiện tại
+sku_name,categorical,drop,Chỉ hiển thị; gần trùng base_sku
+branch_name,categorical,drop,Ánh xạ 1-1 với branch
+bravo_sku,categorical,drop,Sai grain target Base SKU
+unit,categorical,drop,Chỉ có một giá trị
+thang,calendar,drop,Trùng tuyệt đối với month
+vung,categorical,drop,Giữ một normalized_region duy nhất
+feature_refreshed_at,metadata,drop,"Metadata pipeline, không phải demand signal"
+calculated_at,metadata,drop,"Metadata pipeline, có nguy cơ leakage"

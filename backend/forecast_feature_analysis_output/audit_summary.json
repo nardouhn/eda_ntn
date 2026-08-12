@@ -1,0 +1,81 @@
+{
+  "generated_at": "2026-08-13T01:12:28.517462+07:00",
+  "output_dir": "D:\\demand forecasting\\itern\\new_web\\sku-analytics-forecast\\backend\\forecast_feature_analysis_output",
+  "panel_sample_limit": 50000,
+  "source_profile": {
+    "source_rows": 196039,
+    "min_month": "2024-01-01",
+    "max_month": "2026-06-01",
+    "base_skus": 2738,
+    "bravo_skus": 6573,
+    "branches": 61,
+    "regions": 3,
+    "price_groups": 18,
+    "factory_skus": 2541,
+    "pattern_sets": 1736,
+    "sku_names": 2709,
+    "units": 1,
+    "region_missing": 8866,
+    "price_group_missing": 0,
+    "factory_sku_missing": 0,
+    "pattern_set_missing": 0,
+    "sku_name_missing": 0
+  },
+  "strongest_log_features": [
+    {
+      "feature": "rolling3_observed",
+      "pearson_log1p": 0.522532405480416,
+      "coverage": 1.0,
+      "availability": "forecast_safe"
+    },
+    {
+      "feature": "lag1",
+      "pearson_log1p": 0.466167815073532,
+      "coverage": 1.0,
+      "availability": "forecast_safe"
+    },
+    {
+      "feature": "revenue_lag1",
+      "pearson_log1p": 0.31400650343822,
+      "coverage": 1.0,
+      "availability": "forecast_safe"
+    },
+    {
+      "feature": "lag2",
+      "pearson_log1p": 0.281534461715106,
+      "coverage": 0.663935,
+      "availability": "forecast_safe"
+    },
+    {
+      "feature": "line_count_lag1",
+      "pearson_log1p": 0.237510737860266,
+      "coverage": 1.0,
+      "availability": "forecast_safe"
+    },
+    {
+      "feature": "lag3",
+      "pearson_log1p": 0.218548227868419,
+      "coverage": 0.581611,
+      "availability": "forecast_safe"
+    },
+    {
+      "feature": "lag6",
+      "pearson_log1p": 0.111709567905967,
+      "coverage": 0.409744,
+      "availability": "forecast_safe"
+    },
+    {
+      "feature": "tet_target",
+      "pearson_log1p": -0.0733603558823945,
+      "coverage": 1.0,
+      "availability": "known_future"
+    }
+  ],
+  "warnings": [
+    "Correlation/covariance là mô tả đơn biến, không thay thế rolling backtest.",
+    "Covariance phụ thuộc đơn vị nên không dùng xếp hạng feature khác thang đo.",
+    "Categorical eta-squared là in-sample và thiên vị feature cardinality cao.",
+    "Panel chỉ gồm target có origin tháng liền trước được quan sát; không tự zero-fill missing.",
+    "Demand pattern/ADI/CV2 từ latest episode gây leakage khi backtest nếu không tính lại as-of-origin."
+  ]
+}
