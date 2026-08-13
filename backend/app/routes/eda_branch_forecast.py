@@ -417,6 +417,85 @@ def _branch_metrics(rows: list[dict[str, Any]], global_min: date, global_max: da
     }
 
 
+def _seasonality_analysis(
+    metrics: list[dict[str, Any]],
+    by_branch: dict[str, list[dict[str, Any]]],
+    selected_code: str,
+) -> dict[str, Any]:
+    selected = next(row for row in metrics if row["branch"] == selected_code)
+    region_metrics = [row for row in metrics if row["region"] == selected["region"]]
+    selected_profile = {row["month_number"]: row for row in selected["monthly_profile"]}
+    region_mean = sum(float(row["mean_monthly_quantity"]) for row in region_metrics)
+    comparison_profile: list[dict[str, Any]] = []
+    for month_number in range(1, 13):
+        peer_indices = [
+            float(profile["seasonal_index"])
+            for row in region_metrics if row["branch"] != selected_code
+            for profile in row["monthly_profile"]
+            if profile["month_number"] == month_number and profile["seasonal_index"] is not None
+        ]
+        region_month_quantity = sum(
+            float(profile["mean_quantity"] or 0.0)
+            for row in region_metrics
+            for profile in row["monthly_profile"]
+            if profile["month_number"] == month_number
+        )
+        selected_month = selected_profile[month_number]
+        comparison_profile.append({
+            "month_number": month_number,
+            "selected_index": selected_month["seasonal_index"],
+            "selected_observations": selected_month["observations"],
+            "peer_average_index": fmean(peer_indices) if peer_indices else None,
+            "peer_median_index": median(peer_indices) if peer_indices else None,
+            "peer_branch_count": len(peer_indices),
+            "region_total_index": region_month_quantity / region_mean if region_mean > 0 else None,
+        })
+
+    branch_rows: list[dict[str, Any]] = []
+    for row in region_metrics:
+        profile = row["monthly_profile"]
+        valid = [item for item in profile if item["seasonal_index"] is not None]
+        indices = [float(item["seasonal_index"]) for item in valid]
+        peak = max(valid, key=lambda item: item["seasonal_index"]) if valid else None
+        trough = min(valid, key=lambda item: item["seasonal_index"]) if valid else None
+        similarity_pairs = [
+            (float(selected_profile[item["month_number"]]["seasonal_index"]), float(item["seasonal_index"]))
+            for item in valid
+            if selected_profile[item["month_number"]]["seasonal_index"] is not None
+        ]
+        source_rows = by_branch[row["branch"]]
+        rainy = [float(item["quantity"]) for item in source_rows if item.get("flag_mua_mua") == 1]
+        dry = [float(item["quantity"]) for item in source_rows if item.get("flag_mua_mua") == 0]
+        rainy_mean = fmean(rainy) if rainy else None
+        dry_mean = fmean(dry) if dry else None
+        branch_rows.append({
+            "branch": row["branch"],
+            "branch_name": row["branch_name"],
+            "region": row["region"],
+            "seasonal_strength": sqrt(fmean((value - 1.0) ** 2 for value in indices)) if indices else None,
+            "selected_similarity": 1.0 if row["branch"] == selected_code else _correlation(similarity_pairs),
+            "peak_month": peak["month_number"] if peak else None,
+            "peak_index": peak["seasonal_index"] if peak else None,
+            "trough_month": trough["month_number"] if trough else None,
+            "trough_index": trough["seasonal_index"] if trough else None,
+            "reliable_months": sum(item["observations"] >= 2 for item in profile),
+            "seasonal_gain": row["seasonal_gain"],
+            "rainy_mean_quantity": rainy_mean,
+            "dry_mean_quantity": dry_mean,
+            "rainy_uplift": rainy_mean / dry_mean - 1 if rainy_mean is not None and dry_mean and dry_mean > 0 else None,
+            "profile": profile,
+        })
+    branch_rows.sort(key=lambda row: (row["branch"] != selected_code, -abs(row["selected_similarity"] or 0.0), row["branch"]))
+    return {
+        "region": selected["region"],
+        "selected_branch": selected_code,
+        "same_region_branch_count": len(region_metrics),
+        "comparison_profile": comparison_profile,
+        "branches": branch_rows,
+        "evidence_warning": "Mỗi tháng trong năm chỉ có tối đa 2–3 quan sát; dùng profile để sàng lọc mùa vụ và xác nhận bằng rolling backtest.",
+    }
+
+
 @router.get("/overview")
 async def get_branch_forecast_overview(
     region: str | None = None,
@@ -534,6 +613,7 @@ async def get_branch_forecast_overview(
     clusters = _cluster_branches(metrics)
     selected_code = branch if branch and any(row["branch"] == branch for row in metrics) else metrics[0]["branch"]
     selected = next(row for row in metrics if row["branch"] == selected_code)
+    seasonality = _seasonality_analysis(metrics, by_branch, selected_code)
     async with get_pool().connection() as conn:
         selected_sku_month_rows = await (
             await conn.execute(
@@ -615,6 +695,7 @@ async def get_branch_forecast_overview(
         ],
         "branches": table_rows,
         "selected": selected_detail,
+        "seasonality": seasonality,
         "branch_feature_associations": branch_associations,
         "region_feature_associations": region_associations,
         "feature_interaction_matrix": _feature_matrix([dict(row) for row in feature_rows]),
@@ -630,6 +711,7 @@ async def get_branch_forecast_overview(
         "methodology": {
             "target": "SUM(quantity) của toàn bộ dòng theo chi nhánh × tháng; không lấy MAX và không chặn quantity âm ở tầng SKU.",
             "seasonal": "Seasonal candidate khi có ít nhất 6 origin lag-12 và Seasonal Naive cải thiện WAPE >=10% so với Naive.",
+            "seasonality_comparison": "Seasonal index = mean quantity của tháng trong năm / mean toàn lịch sử của chính CN. Profile cùng vùng lấy trung bình index từng CN để CN lớn không lấn át; region total là profile tổng có trọng số quy mô.",
             "coverage": "LOW_COVERAGE khi dưới 12 tháng quan sát hoặc coverage lịch dưới 80%.",
             "concentration": "Top-1/Top-5 share và HHI đo mức tổng chi nhánh phụ thuộc vào vài SKU.",
             "drivers": "Correlation dùng log1p(quantity), chỉ mô tả liên hệ; GG hiện tại bị đánh dấu unknown-at-origin.",

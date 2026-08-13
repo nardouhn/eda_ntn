@@ -9,6 +9,7 @@ from app.routes.eda_branch_forecast import (
     _feature_associations,
     _lag_associations,
     _region_influence,
+    _seasonality_analysis,
     _sku_influence,
     _wape,
 )
@@ -109,3 +110,31 @@ def test_lag_region_and_sku_influence_helpers() -> None:
     sku = _sku_influence(sku_rows, values)[0]
     assert sku["absolute_quantity_share"] == 1.0
     assert sku["strongest_lag"] in {1, 2, 3}
+
+
+def test_seasonality_compares_selected_branch_with_same_region() -> None:
+    rows_by_branch = {}
+    metrics = []
+    for branch, multiplier in [("A", 1.0), ("B", 2.0), ("C", 3.0)]:
+        rows = []
+        for index in range(24):
+            month_index = 2024 * 12 + index
+            rows.append({
+                "branch": branch,
+                "branch_name": f"CN {branch}",
+                "region": "DNB" if branch != "C" else "TNB",
+                "month": date(month_index // 12, month_index % 12 + 1, 1),
+                "quantity": multiplier * (200 if index % 12 == 0 else 100),
+                "active_skus": 10,
+                "line_count": 5,
+                "is_active": True,
+                "flag_mua_mua": int(index % 12 >= 4),
+            })
+        rows_by_branch[branch] = rows
+        metrics.append(_branch_metrics(rows, rows[0]["month"], rows[-1]["month"]))
+
+    result = _seasonality_analysis(metrics, rows_by_branch, "A")
+    assert result["same_region_branch_count"] == 2
+    assert {row["branch"] for row in result["branches"]} == {"A", "B"}
+    assert result["comparison_profile"][0]["selected_index"] > 1
+    assert result["branches"][0]["selected_similarity"] == 1.0
