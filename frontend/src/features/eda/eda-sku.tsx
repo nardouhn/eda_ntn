@@ -135,10 +135,17 @@ export function EdaSku() {
       </div>
 
       {/* TÌM KIẾM */}
-      <div style={{ marginBottom: "16px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+      <div
+        style={{
+          marginBottom: "16px",
+          display: "flex",
+          gap: "10px",
+          flexWrap: "wrap",
+        }}
+      >
         <input
           type="text"
-          placeholder="🔍 Tìm SKU theo mã hoặc tên..."
+          placeholder="Tìm SKU theo mã hoặc tên..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
@@ -179,7 +186,7 @@ export function EdaSku() {
         style={{ gridTemplateColumns: "repeat(4, 1fr)" }}
       >
         <article>
-          <span>📦 Base SKU</span>
+          <span>Base SKU</span>
           <strong>
             {loading
               ? "..."
@@ -187,7 +194,7 @@ export function EdaSku() {
           </strong>
         </article>
         <article>
-          <span>🚨 Cần rà soát</span>
+          <span>Cần rà soát</span>
           <strong style={{ color: "#ef4444" }}>
             {loading
               ? "..."
@@ -195,25 +202,29 @@ export function EdaSku() {
           </strong>
         </article>
         <article>
-          <span>🟢 Tần suất đều (Smooth)</span>
+          <span>Tần suất đều (Smooth)</span>
           <strong style={{ color: "#10b981" }}>
             {loading ? "..." : (overview?.smooth_count || 0).toLocaleString()}
           </strong>
         </article>
         <article>
-          <span>🔴 Rủi ro cao (Lumpy)</span>
+          <span>Rủi ro cao (Lumpy)</span>
           <strong style={{ color: "#f59e0b" }}>
             {loading ? "..." : (overview?.lumpy_count || 0).toLocaleString()}
           </strong>
         </article>
       </div>
 
-      <div className="panel" style={{ marginBottom: "16px", padding: "12px 16px" }}>
+      <div
+        className="panel"
+        style={{ marginBottom: "16px", padding: "12px 16px" }}
+      >
         <p style={{ margin: 0, color: "#9db4c4", fontSize: "11px" }}>
           <strong style={{ color: "#16d8c2" }}>Nguồn pattern:</strong>{" "}
           {pattern_source || "—"} · Ngưỡng ADI {thresholds?.adi ?? "—"} · CV²{" "}
-          {thresholds?.cv2 ?? "—"} · Tối thiểu {thresholds?.min_history_months ?? "—"}
-          T lịch sử / {thresholds?.min_positive_months ?? "—"}T có demand dương.
+          {thresholds?.cv2 ?? "—"} · Tối thiểu{" "}
+          {thresholds?.min_history_months ?? "—"}T lịch sử /{" "}
+          {thresholds?.min_positive_months ?? "—"}T có demand dương.
           {methodology ? ` ${methodology}` : ""}
         </p>
       </div>
@@ -239,7 +250,7 @@ export function EdaSku() {
               className="empty"
               style={{ padding: "40px", textAlign: "center" }}
             >
-              ⏳ Đang tính toán...
+              Đang tính toán...
             </div>
           ) : demand_distribution && demand_distribution.length > 0 ? (
             <div style={{ height: "300px" }}>
@@ -254,7 +265,9 @@ export function EdaSku() {
                     paddingAngle={2}
                     dataKey="value"
                     label={(props: { name?: string; percent?: number }) =>
-                      `${props.name ?? ""} (${((props.percent ?? 0) * 100).toFixed(0)}%)`
+                      `${props.name ?? ""} (${(
+                        (props.percent ?? 0) * 100
+                      ).toFixed(0)}%)`
                     }
                   >
                     {demand_distribution.map((entry, index) => (
@@ -267,7 +280,10 @@ export function EdaSku() {
                     ))}
                   </Pie>
                   <RechartsTooltip
-                    formatter={(value: unknown) => [`${String(value)} SKU`, "Số lượng"]}
+                    formatter={(value: unknown) => [
+                      `${String(value)} SKU`,
+                      "Số lượng",
+                    ]}
                     contentStyle={{
                       backgroundColor: "#0b1927",
                       border: "1px solid #233a4c",
@@ -292,7 +308,8 @@ export function EdaSku() {
           <div className="panel-title">
             <div>
               <p className="eyebrow">
-                BẢN ĐỒ ROLL-UP (ADI={thresholds?.adi ?? "—"}, CV²={thresholds?.cv2 ?? "—"})
+                BẢN ĐỒ ROLL-UP (ADI={thresholds?.adi ?? "—"}, CV²=
+                {thresholds?.cv2 ?? "—"})
               </p>
               <h3>Ngưỡng tham chiếu dùng chung</h3>
             </div>
@@ -302,7 +319,7 @@ export function EdaSku() {
               className="empty"
               style={{ padding: "40px", textAlign: "center" }}
             >
-              ⏳ Đang vẽ bản đồ...
+              Đang vẽ bản đồ...
             </div>
           ) : scatter_data && scatter_data.length > 0 ? (
             <div style={{ height: "300px" }}>
@@ -424,7 +441,7 @@ export function EdaSku() {
             className="empty"
             style={{ padding: "40px", textAlign: "center" }}
           >
-            ⏳ Đang tải...
+            Đang tải...
           </div>
         ) : sku_list && sku_list.length > 0 ? (
           <div className="table-scroll" style={{ maxHeight: "500px" }}>
@@ -433,14 +450,20 @@ export function EdaSku() {
                 <tr>
                   <th style={{ fontSize: "11px" }}>Mã SKU Base</th>
                   <th style={{ fontSize: "11px" }}>Tên sản phẩm</th>
-                  <th style={{ fontSize: "11px", textAlign: "center" }}>Trạng thái</th>
+                  <th style={{ fontSize: "11px", textAlign: "center" }}>
+                    Trạng thái
+                  </th>
                   <th style={{ fontSize: "11px", textAlign: "right" }}>
                     Sản lượng (M²)
                   </th>
                   <th style={{ fontSize: "11px", textAlign: "center" }}>ADI</th>
                   <th style={{ fontSize: "11px", textAlign: "center" }}>CV²</th>
-                  <th style={{ fontSize: "11px", textAlign: "center" }}>Chi nhánh</th>
-                  <th style={{ fontSize: "11px", textAlign: "center" }}>Lịch sử</th>
+                  <th style={{ fontSize: "11px", textAlign: "center" }}>
+                    Chi nhánh
+                  </th>
+                  <th style={{ fontSize: "11px", textAlign: "center" }}>
+                    Lịch sử
+                  </th>
                   <th style={{ fontSize: "11px", textAlign: "center" }}>
                     Phân Nhóm
                   </th>
@@ -461,7 +484,11 @@ export function EdaSku() {
                       {sku.sku_name || sku.base_sku}
                     </td>
                     <td style={{ fontSize: "11px", textAlign: "center" }}>
-                      <span className={`status ${sku.status === "Hoạt động" ? "active" : "inactive"}`}>
+                      <span
+                        className={`status ${
+                          sku.status === "Hoạt động" ? "active" : "inactive"
+                        }`}
+                      >
                         {sku.status}
                       </span>
                     </td>
@@ -492,7 +519,8 @@ export function EdaSku() {
                       {sku.branch_count}
                     </td>
                     <td style={{ fontSize: "11px", textAlign: "center" }}>
-                      {sku.history_months ?? "—"}T / {sku.positive_months ?? "—"}T dương
+                      {sku.history_months ?? "—"}T /{" "}
+                      {sku.positive_months ?? "—"}T dương
                     </td>
                     <td style={{ fontSize: "11px", textAlign: "center" }}>
                       <span

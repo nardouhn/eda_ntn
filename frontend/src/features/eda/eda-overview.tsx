@@ -324,7 +324,7 @@ export function EdaOverview() {
         <div ref={searchRef} style={{ position: "relative" }}>
           <input
             type="text"
-            placeholder="🔍 Nhóm A: Tìm chi nhánh..."
+            placeholder="Tìm chi nhánh..."
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
@@ -442,7 +442,7 @@ export function EdaOverview() {
             outline: "none",
           }}
         >
-          <option value="">📦 Nhóm A: TT SKU</option>
+          <option value="">Trạng thái SKU</option>
           {(filterOptions?.sku_statuses || []).map((status) => (
             <option key={status} value={status}>
               {status}
@@ -463,7 +463,7 @@ export function EdaOverview() {
             outline: "none",
           }}
         >
-          <option value="">🌍 Nhóm B: Vùng</option>
+          <option value="">Vùng</option>
           {(filterOptions?.regions || []).map((region) => (
             <option key={region} value={region}>
               {region}
@@ -484,7 +484,7 @@ export function EdaOverview() {
             outline: "none",
           }}
         >
-          <option value="">🏢 Nhóm B: TT Chi nhánh</option>
+          <option value="">Trạng thái Chi nhánh</option>
           {(filterOptions?.branch_statuses || []).map((status) => (
             <option key={status} value={status}>
               {status}
@@ -505,7 +505,7 @@ export function EdaOverview() {
             whiteSpace: "nowrap",
           }}
         >
-          🔄 Đặt lại
+          Đặt lại
         </button>
       </div>
 
@@ -515,7 +515,7 @@ export function EdaOverview() {
         style={{ gridTemplateColumns: "repeat(4, 1fr)" }}
       >
         <article>
-          <span>📦 SKU Base</span>
+          <span> SKU Base</span>
           <strong>
             {loading ? "..." : formatNumber(kpis?.total_base_skus || 0)}
           </strong>
@@ -525,17 +525,17 @@ export function EdaOverview() {
           </small>
         </article>
         <article>
-          <span>🏢 Chi nhánh</span>
+          <span> Chi nhánh</span>
           <strong>{loading ? "..." : displayBranches}</strong>
         </article>
         <article>
-          <span>📐 Số lượng (M²)</span>
+          <span> Số lượng (M²)</span>
           <strong>
             {loading ? "..." : formatNumber(kpis?.total_quantity || 0)}
           </strong>
         </article>
         <article>
-          <span>💰 Doanh thu</span>
+          <span> Doanh thu</span>
           <strong>
             {loading ? "..." : formatCurrencyLocal(kpis?.total_amount || 0)}
           </strong>
@@ -564,7 +564,7 @@ export function EdaOverview() {
               className="empty"
               style={{ padding: "40px", textAlign: "center" }}
             >
-              ⏳ Đang tải...
+              Đang tải...
             </div>
           ) : region_proportion && region_proportion.length > 0 ? (
             <div style={{ height: "220px" }}>
@@ -625,7 +625,7 @@ export function EdaOverview() {
               className="empty"
               style={{ padding: "40px", textAlign: "center" }}
             >
-              ⏳ Đang tải...
+              Đang tải...
             </div>
           ) : branch_proportion && branch_proportion.length > 0 ? (
             <div style={{ height: "220px" }}>
@@ -689,7 +689,7 @@ export function EdaOverview() {
               className="empty"
               style={{ padding: "40px", textAlign: "center" }}
             >
-              ⏳ Đang tải...
+              Đang tải...
             </div>
           ) : pattern_proportion && pattern_proportion.length > 0 ? (
             <div style={{ height: "220px" }}>
@@ -747,7 +747,7 @@ export function EdaOverview() {
           </div>
           <div className="result-count">
             {kpis?.data_as_of
-              ? `📅 Tính đến ${formatMonth(kpis.data_as_of)}`
+              ? ` Tính đến ${formatMonth(kpis.data_as_of)}`
               : ""}
           </div>
         </div>
@@ -756,7 +756,7 @@ export function EdaOverview() {
             className="empty"
             style={{ padding: "20px", textAlign: "center" }}
           >
-            ⏳ Đang tải dữ liệu, vui lòng chờ...
+            Đang tải dữ liệu, vui lòng chờ...
           </div>
         ) : normalizedTrend && normalizedTrend.length > 0 ? (
           <div style={{ height: "280px" }}>
@@ -864,7 +864,7 @@ export function EdaOverview() {
             className="empty"
             style={{ padding: "20px", textAlign: "center" }}
           >
-            ⏳ Đang tải...
+            Đang tải...
           </div>
         ) : top_products && top_products.length > 0 ? (
           <div className="table-scroll" style={{ maxHeight: "400px" }}>

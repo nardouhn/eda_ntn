@@ -185,7 +185,7 @@ export function EdaBranch() {
       >
         <input
           type="text"
-          placeholder="🔍 Tìm chi nhánh theo tên hoặc mã..."
+          placeholder="Tìm chi nhánh theo tên hoặc mã..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
@@ -230,25 +230,25 @@ export function EdaBranch() {
         style={{ gridTemplateColumns: "repeat(4, 1fr)" }}
       >
         <article>
-          <span>🏢 Chi nhánh theo bộ lọc</span>
+          <span>Chi nhánh theo bộ lọc</span>
           <strong>
             {loading ? "..." : (overview?.total_branches || 0).toLocaleString()}
           </strong>
         </article>
         <article>
-          <span>📦 SKU theo bộ lọc</span>
+          <span>SKU theo bộ lọc</span>
           <strong>
             {loading ? "..." : (overview?.total_skus || 0).toLocaleString()}
           </strong>
         </article>
         <article>
-          <span>📐 Tổng sản lượng (M²)</span>
+          <span>Tổng sản lượng (M²)</span>
           <strong>
             {loading ? "..." : formatNumber(overview?.total_quantity || 0)}
           </strong>
         </article>
         <article>
-          <span>💰 Tổng doanh thu</span>
+          <span>Tổng doanh thu</span>
           <strong>
             {loading ? "..." : formatCurrency(overview?.total_amount)}
           </strong>
@@ -277,7 +277,7 @@ export function EdaBranch() {
               className="empty"
               style={{ padding: "40px", textAlign: "center" }}
             >
-              ⏳ Đang tải...
+              Đang tải...
             </div>
           ) : region_analysis && region_analysis.length > 0 ? (
             <div style={{ height: "260px" }}>
@@ -361,7 +361,7 @@ export function EdaBranch() {
               className="empty"
               style={{ padding: "40px", textAlign: "center" }}
             >
-              ⏳ Đang tải...
+              Đang tải...
             </div>
           ) : sku_coverage && sku_coverage.length > 0 ? (
             <div style={{ height: "260px" }}>
@@ -424,7 +424,7 @@ export function EdaBranch() {
             className="empty"
             style={{ padding: "40px", textAlign: "center" }}
           >
-            ⏳ Đang tải...
+            Đang tải...
           </div>
         ) : branch_performance && branch_performance.length > 0 ? (
           <div className="table-scroll" style={{ maxHeight: "500px" }}>
