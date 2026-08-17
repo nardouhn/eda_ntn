@@ -10,6 +10,8 @@ class Settings:
     cors_origins: tuple[str, ...]
     pool_min_size: int
     pool_max_size: int
+    forecast_import_token: str
+    forecast_upload_max_bytes: int
 
 
 def get_settings() -> Settings:
@@ -27,4 +29,6 @@ def get_settings() -> Settings:
         cors_origins=origins,
         pool_min_size=int(os.getenv("DB_POOL_MIN_SIZE", "1")),
         pool_max_size=int(os.getenv("DB_POOL_MAX_SIZE", "5")),
+        forecast_import_token=os.getenv("FORECAST_IMPORT_TOKEN", "").strip(),
+        forecast_upload_max_bytes=int(os.getenv("FORECAST_UPLOAD_MAX_BYTES", str(25 * 1024 * 1024))),
     )
