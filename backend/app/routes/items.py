@@ -57,6 +57,20 @@ def month_range(data_as_of: date, count: int = 12) -> list[date]:
     return [add_months(data_as_of, offset) for offset in range(-(count - 1), 1)]
 
 
+def inclusive_month_range(start_month: date, end_month: date) -> list[date]:
+    start = date(start_month.year, start_month.month, 1)
+    end = date(end_month.year, end_month.month, 1)
+
+    if start > end:
+        return []
+
+    count = (end.year - start.year) * 12 + (end.month - start.month) + 1
+
+    return [
+        add_months(start, offset)
+        for offset in range(count)
+    ]
+
 @router.get("")
 async def list_items(
     q: str | None = None,
@@ -177,7 +191,125 @@ async def list_items(
         "total": total_row["total"] if total_row else 0,
         "items": items,
     }
+@router.get("/{base_sku}/history")
+async def item_history(
+    base_sku: str,
+    branch_code: str = Query(...),
+    start_month: date = Query(date(2024, 1, 1)),
+    end_month: date = Query(date(2026, 6, 1)),
+) -> dict:
 
+    start = date(
+        start_month.year,
+        start_month.month,
+        1,
+    )
+
+    end = date(
+        end_month.year,
+        end_month.month,
+        1,
+    )
+
+    if start > end:
+        raise HTTPException(
+            400,
+            "start_month must be before or equal to end_month",
+        )
+
+    month_count = (
+        (end.year - start.year) * 12
+        + (end.month - start.month)
+        + 1
+    )
+
+    if month_count > 120:
+        raise HTTPException(
+            400,
+            "History range is too large",
+        )
+
+    async with get_pool().connection() as conn:
+
+        # Check Base SKU + Branch có tồn tại hay không
+        exists = await (
+            await conn.execute(
+                """
+                SELECT 1
+                FROM source.mart_sku_branch_month
+                WHERE base_sku = %s
+                  AND branch = %s
+                LIMIT 1
+                """,
+                [
+                    base_sku,
+                    branch_code,
+                ],
+            )
+        ).fetchone()
+
+        if not exists:
+            raise HTTPException(
+                404,
+                "SKU + Branch not found",
+            )
+
+        # Lấy demand theo từng tháng
+        rows = await (
+            await conn.execute(
+                """
+                SELECT
+                    month,
+                    SUM(
+                        CASE
+                            WHEN quantity > 0
+                            THEN quantity
+                            ELSE 0
+                        END
+                    ) AS value
+                FROM source.mart_sku_branch_month
+                WHERE base_sku = %s
+                  AND branch = %s
+                  AND month >= %s
+                  AND month <= %s
+                GROUP BY month
+                ORDER BY month
+                """,
+                [
+                    base_sku,
+                    branch_code,
+                    start,
+                    end,
+                ],
+            )
+        ).fetchall()
+
+    values_by_month = {
+        row["month"]: float(row["value"] or 0)
+        for row in rows
+    }
+
+    months = inclusive_month_range(
+        start,
+        end,
+    )
+
+    return {
+        "base_sku": base_sku,
+        "branch_code": branch_code,
+        "start_month": start,
+        "end_month": end,
+        "items": [
+            {
+                "month": month,
+                "value": values_by_month.get(
+                    month,
+                    0.0,
+                ),
+            }
+            for month in months
+        ],
+    }
 
 # 5. Thêm branch_code vào API variants để biết đang click vào biến thể của chi nhánh nào
 @router.get("/{base_sku}/variants")
