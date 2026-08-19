@@ -11,7 +11,7 @@ import { EdaForecastSegments } from "./eda-forecast-segments";
 import { EdaBranchForecast } from "./eda-branch-forecast";
 
 
-const EDA_TABLE_PAGE_SIZE = 20;
+const EDA_TABLE_PAGE_SIZE = 10;
 
 export function EdaModule() {
   const [activeTab, setActiveTab] = useState("overview");
