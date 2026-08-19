@@ -34,3 +34,30 @@
 
 .forecast-b06-vintage-picker{display:grid;grid-template-columns:auto minmax(220px,420px);align-items:center;gap:8px 12px;margin-bottom:12px;padding:10px 12px;border:1px solid var(--forecast-border);border-radius:9px;background:#091a28}.forecast-b06-vintage-picker label{color:#dff8fb;font-size:11px;font-weight:800}.forecast-b06-vintage-picker select{min-width:0;padding:8px 10px;border:1px solid #28566a;border-radius:7px;background:#0d2435;color:#dff8fb;font:inherit;font-size:11px}.forecast-b06-vintage-picker small{grid-column:2;color:var(--muted);font-size:9px}
 @media(max-width:700px){.forecast-b06-vintage-picker{grid-template-columns:1fr}.forecast-b06-vintage-picker small{grid-column:auto}}
+
+/* V02 actual-history and rolling-quality additions for the Forecast module. */
+.forecast-timeline{margin-top:10px;padding:9px 10px 3px;border:1px solid #1b4051;border-radius:8px;background:#081a27}.forecast-timeline-legend{display:flex;align-items:center;gap:11px;margin:0 3px 5px;color:var(--muted);font-size:9px}.forecast-timeline-legend span{display:inline-flex;align-items:center;gap:5px}.forecast-timeline-legend span::before{width:7px;height:7px;border-radius:50%;content:""}.forecast-timeline-legend .actual::before{background:#84b7ff}.forecast-timeline-legend .forecast::before{background:var(--forecast-accent)}.forecast-timeline-legend strong{margin-left:auto;color:#a9c5cf;font-weight:700}.forecast-timeline svg{display:block;width:100%;height:204px;overflow:visible}.forecast-timeline-grid{stroke:#1a3546;stroke-width:1}.forecast-timeline-actual{fill:none;stroke:#84b7ff;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}.forecast-timeline-forecast{fill:none;stroke:var(--forecast-accent);stroke-width:2.5;stroke-dasharray:7 5;stroke-linecap:round;stroke-linejoin:round}.forecast-timeline-actual-dot{fill:#84b7ff;stroke:#081a27;stroke-width:2}.forecast-timeline-forecast-dot{fill:var(--forecast-accent);stroke:#081a27;stroke-width:2}.forecast-timeline text{fill:#829faa;font-size:10px;font-family:inherit}.forecast-b06-history-panel,.forecast-b06-sku-timeline{margin:0 0 16px;padding:12px;border:1px solid #25576a;border-radius:9px;background:linear-gradient(135deg,#0b2433,#091b29)}.forecast-b06-history-panel .panel-title h4,.forecast-b06-sku-timeline h4{margin:3px 0;color:#e7fafc}.forecast-b06-history-panel .panel-title>span{color:var(--forecast-accent);font-size:10px;font-weight:800}.forecast-b06-sku-timeline{display:grid;grid-template-columns:minmax(150px,.42fr) 1fr;gap:12px;align-items:start}.forecast-b06-sku-timeline .eyebrow{margin:0;color:var(--forecast-accent);font-size:9px}.forecast-b06-sku-timeline h4{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.forecast-b06-sku-timeline .forecast-timeline{margin:0}.forecast-accuracy{display:block;color:#819ca8;font-size:10px;font-weight:800;white-space:nowrap}.forecast-accuracy.good{color:#63e4bc}.forecast-accuracy small{display:block;margin-top:3px;color:#718f9b;font-size:8px;font-weight:600}.forecast-b06-table .forecast-accuracy{white-space:normal}.forecast-b06-sku-select{width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}.forecast-b06-sku-select strong{display:block;max-width:160px;overflow:hidden;color:#eaf9fc;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.forecast-b06-sku-select small{display:block;margin-top:3px;color:#7ea6b4;font-size:8px}.forecast-b06-drawer-table tr{cursor:pointer}.forecast-b06-drawer-table tr.selected,.forecast-b06-drawer-table tr.selected td{background:#113447}.forecast-b06-drawer-table tr.selected td:first-child{box-shadow:inset 3px 0 0 var(--forecast-accent)}.forecast-b06-drawer-table th:nth-child(2),.forecast-b06-drawer-table td:nth-child(2){min-width:84px}.forecast-b06-drawer-table th:nth-child(3),.forecast-b06-drawer-table td:nth-child(3){min-width:100px}.forecast-b06-kpis{grid-template-columns:1.35fr 1.35fr repeat(4,1fr)}
+@media(max-width:1100px){.forecast-b06-kpis{grid-template-columns:repeat(3,1fr)}.forecast-b06-sku-timeline{grid-template-columns:1fr}}
+@media(max-width:700px){.forecast-b06-kpis{grid-template-columns:1fr 1fr}.forecast-timeline svg{height:176px}.forecast-timeline-legend{flex-wrap:wrap}.forecast-timeline-legend strong{margin-left:0}.forecast-b06-sku-timeline{padding:10px}.forecast-b06-drawer-table{min-width:820px}}
+
+/* Forecast history matrix: one monthly group is FC H1, actual and Acc. */
+.forecast-b06-matrix{min-width:2550px;table-layout:auto}
+.forecast-b06-matrix th,.forecast-b06-matrix td{width:auto!important;min-width:84px}
+.forecast-b06-matrix th:first-child,.forecast-b06-matrix td:first-child{min-width:300px;width:300px!important}
+.forecast-b06-matrix th:nth-child(2),.forecast-b06-matrix td:nth-child(2){min-width:100px;width:100px!important}
+.forecast-b06-matrix th.history-group{background:#0d382b;color:#e6fffa;text-align:center}
+.forecast-b06-matrix th.history-sub{background:#0b2e2b;color:#b8e7df;text-align:right;font-size:9px}
+.forecast-b06-matrix td.history-fc{color:#a98dff;background:#0b2230}
+.forecast-b06-matrix td.history-actual{color:#b9d4ff;background:#0b2434}
+.forecast-b06-matrix .forecast-month-acc{font-weight:900;text-align:right;font-variant-numeric:tabular-nums}
+.forecast-b06-matrix .forecast-month-acc.good{color:#58e8bd}
+.forecast-b06-matrix .forecast-month-acc.warn{color:#ffd26d}
+.forecast-b06-matrix .forecast-month-acc.bad{color:#ff7892}
+.forecast-b06-matrix .forecast-month-acc.muted{color:#698795}
+.forecast-b06-matrix tbody tr:hover td.history-fc{background:#153044}
+.forecast-b06-matrix tbody tr:hover td.history-actual{background:#15384b}
+.forecast-timeline-legend .historical::before{background:#a98dff}
+.forecast-timeline-historical{fill:none;stroke:#a98dff;stroke-width:2.25;stroke-dasharray:3 4;stroke-linecap:round;stroke-linejoin:round}
+.forecast-timeline-historical-dot{fill:#a98dff;stroke:#081a27;stroke-width:1.75}
+.forecast-b06-drawer-table.forecast-b06-matrix{min-width:2200px}
+@media(max-width:700px){.forecast-b06-matrix{min-width:2450px}.forecast-b06-drawer-table.forecast-b06-matrix{min-width:2200px}}
