@@ -137,7 +137,7 @@ async def list_items(
                 COUNT(DISTINCT CASE WHEN item_is_active THEN bravo_sku END) AS active_variant_count,
                 COUNT(DISTINCT CASE WHEN NOT item_is_active THEN bravo_sku END) AS inactive_variant_count,
                 COUNT(DISTINCT bravo_sku) AS variant_count,
-                MAX(CASE N {aggregate_status_filter} AND quantity > 0 THEN month END) AS last_positive_sale_month,
+                MAX(CASE WHEN {aggregate_status_filter} AND quantity > 0 THEN month END) AS last_positive_sale_month,
                 COALESCE(SUM(CASE WHEN {aggregate_status_filter} AND month >= %s AND quantity > 0 THEN quantity ELSE 0 END), 0) AS gross_qty_12m,
                 COALESCE(SUM(CASE WHEN {aggregate_status_filter} AND month >= %s AND quantity < 0 THEN ABS(quantity) ELSE 0 END), 0) AS return_qty_12m,
                 COALESCE(SUM(CASE WHEN {aggregate_status_filter} AND month >= %s THEN quantity ELSE 0 END), 0) AS net_qty_12m
